@@ -1,0 +1,7 @@
+
+/build
+/dist
+*.gguf
+*.log
+/llama
+sakura-launcher_config.json

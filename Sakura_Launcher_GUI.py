@@ -244,11 +244,11 @@ class RunSection(QFrame):
                     if hasattr(self, 'n_parallel_spinbox'):
                         self.n_parallel_spinbox.setValue(config.get('n_parallel', 1))
                     if hasattr(self, 'host_input'):
-                        self.host_input.setCurrentText(config.get('host', '127.0.0.1'))
+                        self.host_input.setText(config.get('host', '127.0.0.1'))
                     if hasattr(self, 'port_input'):
                         self.port_input.setText(config.get('port', '8080'))
                     if hasattr(self, 'log_format_combo'):
-                        self.log_format_combo.setCurrentText(config.get('log_format', 'text'))
+                        self.log_format_combo.setText(config.get('log_format', 'text'))
                     self.flash_attention_check.setChecked(config.get('flash_attention', True))
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))

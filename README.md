@@ -1,2 +1,66 @@
-# Sakura_Launcher_GUI
- 
+
+
+# Sakura Launcher GUI
+
+<!-- PROJECT LOGO -->
+<br />
+
+<p align="center">
+  <a href="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/">
+    <img src="icon.png" alt="Logo" width="80" height="80">
+  </a>
+
+  <h3 align="center">Sakura Launcher GUI</h3>
+  <p align="center">
+    一个简单的Sakura启动器
+    <br />
+    <a href="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/issues">报告Bug</a>
+    ·
+    <a href="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/issues">提出新特性</a>
+    ·
+    <a href="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/pulls">贡献代码</a>
+  </p>
+
+</p>
+
+ 本篇README.md面向开发者，需要直接使用Sakura Launcher GUI的用户请直接从右边的Release下载最新版本。
+
+## 目录
+
+- [Sakura Launcher GUI](#sakura-launcher-gui)
+  - [目录](#目录)
+    - [**界面预览**](#界面预览)
+    - [**安装步骤**](#安装步骤)
+    - [**注意事项**](#注意事项)
+    - [**基于项目**](#基于项目)
+
+
+### **界面预览**
+
+![image](img_url)
+
+### **安装步骤**
+
+1. Clone 仓库并进入仓库目录
+
+```sh
+git clone https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI.git
+cd Sakura_Launcher_GUI
+```
+
+1. 安装依赖
+   
+```sh
+pip install -r requirements.txt
+```
+### **注意事项**
+
+- 请确保已安装Python3.x环境
+- 建议使用包管理器安装依赖，如miniconda。
+
+### **基于项目**
+
+- [llama.cpp](https://github.com/ggerganov/llama.cpp)
+- [SakuraLLM](https://github.com/SakuraLLM/SakuraLLM)
+- [PyQt-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets)
+

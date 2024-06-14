@@ -480,7 +480,7 @@ class MainWindow(MSFluentWindow):
         if section.llamacpp_path.text() == '':
             llamacpp_path = os.path.join(CURRENT_DIR, 'llama')
         else:
-            llamacpp_path = section.llamacpp_path.text()
+            llamacpp_path = os.path.abspath(section.llamacpp_path.text())
         exe_extension = '.exe' if sys.platform == 'win32' else ''
         
         if not os.path.exists(llamacpp_path):

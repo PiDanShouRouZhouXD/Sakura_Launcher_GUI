@@ -490,7 +490,7 @@ class MainWindow(MSFluentWindow):
         executable_path = os.path.join(llamacpp_path, f'{executable}{exe_extension}')
 
         if custom_command:
-            command = custom_command
+            command = f"{executable_path} --model {model_path} {custom_command}"
         else:
             model_path = section.model_path.currentText()
             command = f"{executable_path} --model {model_path}"

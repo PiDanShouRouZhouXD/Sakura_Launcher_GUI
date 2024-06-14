@@ -1,23 +1,21 @@
+from math import e
 import sys
 import os
 import json
 import subprocess
 import atexit
 from PySide6.QtCore import Qt, Signal, QObject, Slot
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel,QFrame
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox
 from PySide6.QtGui import QIcon, QColor
-from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit
+from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition
 
 def get_self_path():
     if getattr(sys, 'frozen', False):
-        # 如果程序是被打包的，sys.frozen 会被设置为 True
         return os.path.dirname(sys.executable)
     else:
-        # 如果程序没有被打包，返回脚本所在目录
         return os.path.dirname(os.path.abspath(__file__))
 
 def get_resource_path(relative_path):
-    """ 获取资源文件路径，支持在 PyInstaller 打包后的程序中使用。"""
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     else:
@@ -26,6 +24,7 @@ def get_resource_path(relative_path):
 CURRENT_DIR = get_self_path()
 CONFIG_FILE = 'sakura-launcher_config.json'
 ICON_FILE = 'icon.png'
+SAKURA_LAUNCHER_GUI_VERSION = '0.0.2'
 
 print(CURRENT_DIR)
 
@@ -67,10 +66,26 @@ class LlamaCPPWorker(QObject):
 
 
 class RunSection(QFrame):
-    def __init__(self, title, parent=None):
+    def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
+        self.main_window = main_window
         self.setObjectName(title.replace(' ', '-'))
         self.title = title
+        self.config_preset_combo = None
+        self.custom_command = None
+        self.custom_command_append = None
+        self.gpu_layers_spinbox = None
+        self.model_path = None
+        self.refresh_model_button = None
+        self.gpu_enabled_check = None
+        self.gpu_combo = None
+        self.flash_attention_check = None
+        self.no_mmap_check = None
+        self.context_length = None
+        self.n_parallel_spinbox = None
+        self.host_input = None
+        self.port_input = None
+        self.log_format_combo = None
 
     def _init_common_ui(self, layout):
         layout.addLayout(self._create_model_selection_layout())
@@ -78,10 +93,6 @@ class RunSection(QFrame):
         self.config_preset_combo = EditableComboBox(self)
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
         layout.addWidget(self.config_preset_combo)
-
-        self.llamacpp_path = self._create_line_edit("llama.cpp二进制文件所在的路径（可选），留空则为当前目录下的llama文件夹", "")
-        layout.addWidget(QLabel("llama.cpp 文件夹"))
-        layout.addWidget(self.llamacpp_path)
 
         self.custom_command = TextEdit(self)
         self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
@@ -93,62 +104,6 @@ class RunSection(QFrame):
 
         layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 999, 1, 999, 1))
 
-    def _create_slider_spinbox_layout(self, label_text, variable_name, slider_value, slider_min, slider_max, slider_step):
-        """
-        创建一个包含Slider和SpinBox的通用布局，并设置它们之间的同步
-        """
-        layout = QVBoxLayout()
-        
-        label = QLabel(label_text)
-        layout.addWidget(label)
-        
-        h_layout = QHBoxLayout()
-        
-        slider = Slider(Qt.Horizontal, self)
-
-        slider.setRange(slider_min, slider_max)
-        slider.setPageStep(slider_step)
-        slider.setValue(slider_value)
-
-        spinbox = SpinBox(self)
-        spinbox.setRange(slider_min, slider_max)
-        spinbox.setSingleStep(slider_step)
-        spinbox.setValue(slider_value)
-        
-        slider.valueChanged.connect(spinbox.setValue)
-        spinbox.valueChanged.connect(slider.setValue)
-        
-        h_layout.addWidget(slider)
-        h_layout.addWidget(spinbox)
-        layout.addLayout(h_layout)
-
-        # 保存slider和spinbox到实例变量以便访问
-        setattr(self, f"{variable_name.replace(' ', '_')}", slider)
-        setattr(self, f"{variable_name.replace(' ', '_')}_spinbox", spinbox)
-        
-        return layout
-
-    def _create_model_selection_layout(self):
-        layout = QHBoxLayout()
-        self.model_path = EditableComboBox(self)
-        self.model_path.setPlaceholderText("请选择模型路径")
-        self.refresh_model_button = PushButton(FIF.SYNC,'刷新模型', self)
-        self.refresh_model_button.clicked.connect(self.refresh_models)
-        layout.addWidget(self.model_path)
-        layout.addWidget(self.refresh_model_button)
-        return layout
-
-    def _create_line_edit(self, placeholder, text):
-        line_edit = LineEdit(self)
-        line_edit.setPlaceholderText(placeholder)
-        line_edit.setText(text)
-        return line_edit
-
-    def _create_check_box(self, text, checked):
-        check_box = CheckBox(text, self)
-        check_box.setChecked(checked)
-        return check_box
-
     def _create_gpu_selection_layout(self):
         layout = QHBoxLayout()
         self.gpu_enabled_check = self._create_check_box("单GPU启动（仅支持NVIDIA显卡）", True)
@@ -158,17 +113,74 @@ class RunSection(QFrame):
         layout.addWidget(self.gpu_combo)
         return layout
 
+    def _create_line_edit(self, placeholder, text):
+        line_edit = LineEdit(self)
+        line_edit.setPlaceholderText(placeholder)
+        line_edit.setText(text)
+        return line_edit
+
+    def _create_slider_spinbox_layout(self, label_text, variable_name, slider_value, slider_min, slider_max, slider_step):
+        layout = QVBoxLayout()
+        label = QLabel(label_text)
+        layout.addWidget(label)
+
+        h_layout = QHBoxLayout()
+        slider = Slider(Qt.Horizontal, self)
+        slider.setRange(slider_min, slider_max)
+        slider.setPageStep(slider_step)
+        slider.setValue(slider_value)
+
+        spinbox = SpinBox(self)
+        spinbox.setRange(slider_min, slider_max)
+        spinbox.setSingleStep(slider_step)
+        spinbox.setValue(slider_value)
+
+        slider.valueChanged.connect(spinbox.setValue)
+        spinbox.valueChanged.connect(slider.setValue)
+
+        h_layout.addWidget(slider)
+        h_layout.addWidget(spinbox)
+        layout.addLayout(h_layout)
+
+        setattr(self, f"{variable_name.replace(' ', '_')}", slider)
+        setattr(self, f"{variable_name.replace(' ', '_')}_spinbox", spinbox)
+
+        return layout
+
+    def _create_model_selection_layout(self):
+        layout = QHBoxLayout()
+        self.model_path = EditableComboBox(self)
+        self.model_path.setPlaceholderText("请选择模型路径")
+        self.refresh_model_button = PushButton(FIF.SYNC, '刷新模型', self)
+        self.refresh_model_button.clicked.connect(self.refresh_models)
+        layout.addWidget(self.model_path)
+        layout.addWidget(self.refresh_model_button)
+        return layout
+
+    def _create_check_box(self, text, checked):
+        check_box = CheckBox(text, self)
+        check_box.setChecked(checked)
+        return check_box
+    
+    def _create_editable_combo_box(self, items):
+        combo_box = EditableComboBox(self)
+        combo_box.addItems(items)
+        return combo_box
+
     def refresh_models(self):
         self.model_path.clear()
-        models = [f for f in os.listdir('.') if f.endswith('.gguf')]
+        models = []
+        search_paths = [CURRENT_DIR] + self.main_window.get_model_search_paths()
+        for path in search_paths:
+            if os.path.exists(path) and os.path.isdir(path):
+                models.extend([os.path.join(path, f) for f in os.listdir(path) if f.endswith('.gguf')])
         self.model_path.addItems(models)
 
     def refresh_gpus(self):
         self.gpu_combo.clear()
         try:
             os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-            result = subprocess.run(
-                'nvidia-smi --query-gpu=name --format=csv,noheader', shell=True, capture_output=True, text=True)
+            result = subprocess.run('nvidia-smi --query-gpu=name --format=csv,noheader', shell=True, capture_output=True, text=True)
             gpus = result.stdout.strip().split('\n')
             self.gpu_combo.addItems(gpus)
         except Exception as e:
@@ -183,18 +195,17 @@ class RunSection(QFrame):
         presets = self.load_presets_from_file()
         if self.title not in presets:
             presets[self.title] = []
-
         new_preset = {
             'name': preset_name,
             'config': {
-                'llamacpp_path': self.llamacpp_path.text(),
                 'custom_command': self.custom_command.toPlainText(),
                 'custom_command_append': self.custom_command_append.toPlainText(),
                 'gpu_layers': self.gpu_layers_spinbox.value(),
                 'flash_attention': self.flash_attention_check.isChecked(),
                 'no_mmap': self.no_mmap_check.isChecked(),
                 'gpu_enabled': self.gpu_enabled_check.isChecked(),
-                'gpu': self.gpu_combo.currentText()
+                'gpu': self.gpu_combo.currentText(),
+                'model_path': self.model_path.currentText()  # 新增一行保存模型路径
             }
         }
 
@@ -207,14 +218,13 @@ class RunSection(QFrame):
                 'log_format': self.log_format_combo.currentText()
             })
 
-        # 查找同名预设并更新，否则追加
         for i, preset in enumerate(presets[self.title]):
             if preset['name'] == preset_name:
                 presets[self.title][i] = new_preset
                 break
         else:
             presets[self.title].append(new_preset)
-        
+
         config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
         with open(config_file_path, 'w', encoding='utf-8') as f:
             json.dump(presets, f, ensure_ascii=False, indent=4)
@@ -225,20 +235,24 @@ class RunSection(QFrame):
     def load_presets(self):
         self.config_preset_combo.clear()
         presets = self.load_presets_from_file()
+        if not presets or presets == {}:
+            return
         if self.title in presets:
             self.config_preset_combo.addItems([preset['name'] for preset in presets[self.title]])
 
     def load_selected_preset(self):
         preset_name = self.config_preset_combo.currentText()
         presets = self.load_presets_from_file()
+        if not presets or presets == {}:
+            return
         if self.title in presets:
             for preset in presets[self.title]:
                 if preset['name'] == preset_name:
                     config = preset['config']
-                    self.llamacpp_path.setText(config.get('llamacpp_path', ''))
                     self.custom_command.setPlainText(config.get('custom_command', ''))
                     self.custom_command_append.setPlainText(config.get('custom_command_append', ''))
                     self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 99))
+                    self.model_path.setCurrentText(config.get('model_path', ''))  # 加载模型路径
                     if hasattr(self, 'context_length'):
                         self.context_length.setValue(config.get('context_length', 1024))
                     if hasattr(self, 'n_parallel_spinbox'):
@@ -264,14 +278,12 @@ class RunSection(QFrame):
                 except json.JSONDecodeError:
                     return {}
         return {}
-
     def toggle_gpu_selection(self):
         self.gpu_combo.setEnabled(self.gpu_enabled_check.isChecked())
 
-
 class RunServerSection(RunSection):
-    def __init__(self, title, parent=None):
-        super().__init__(title, parent)
+    def __init__(self, title, main_window, parent=None):
+        super().__init__(title, main_window, parent)
         self._init_ui()
         self.load_presets()
         self.refresh_models()
@@ -284,7 +296,7 @@ class RunServerSection(RunSection):
 
         layout.addWidget(QLabel("上下文长度 -c"))
         layout.addLayout(self._create_context_length_layout())
-        
+
         layout.addLayout(self._create_slider_spinbox_layout("并行工作线程数 -np", "n_parallel", 1, 1, 32, 1))
 
         self.host_input = self._create_editable_combo_box(["127.0.0.1", "0.0.0.0"])
@@ -310,7 +322,7 @@ class RunServerSection(RunSection):
         self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
         layout.addWidget(self.run_button)
 
-        self.save_preset_button = PushButton(FIF.SAVE,'保存预设', self)
+        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
         self.save_preset_button.clicked.connect(self.save_preset)
         layout.addWidget(self.save_preset_button)
 
@@ -338,21 +350,14 @@ class RunServerSection(RunSection):
         layout.addWidget(self.context_length_input)
         return layout
 
-    def _create_editable_combo_box(self, items):
-        combo_box = EditableComboBox(self)
-        combo_box.addItems(items)
-        return combo_box
-
-
 class RunBenchmarkSection(RunSection):
-    def __init__(self, title, parent=None):
-        super().__init__(title, parent)
+    def __init__(self, title, main_window, parent=None):
+        super().__init__(title, main_window, parent)
         self._init_ui()
         self.load_presets()
         self.refresh_models()
         self.refresh_gpus()
         self.load_selected_preset()
-
 
     def _init_ui(self):
         layout = QVBoxLayout()
@@ -369,7 +374,7 @@ class RunBenchmarkSection(RunSection):
         self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
         layout.addWidget(self.run_button)
 
-        self.save_preset_button = PushButton(FIF.SAVE,'保存预设', self)
+        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
         self.save_preset_button.clicked.connect(self.save_preset)
         layout.addWidget(self.save_preset_button)
 
@@ -378,7 +383,7 @@ class RunBenchmarkSection(RunSection):
         layout.addWidget(self.load_preset_button)
 
         self.setLayout(layout)
-
+        
 
 class LogSection(QFrame):
     def __init__(self, title, parent=None):
@@ -397,10 +402,6 @@ class LogSection(QFrame):
         self.clear_log_button.clicked.connect(self.clear_log)
         layout.addWidget(self.clear_log_button)
 
-        # self.terminate_button = PrimaryPushButton("关闭所有进程", self)
-        # self.terminate_button.clicked.connect(self.terminate_all_processes)
-        # layout.addWidget(self.terminate_button)
-
         self.setLayout(layout)
 
     def clear_log(self):
@@ -408,7 +409,7 @@ class LogSection(QFrame):
 
     def log_info(self, message):
         self.log_display.append(message)
-        self.log_display.ensureCursorVisible()  # 确保日志滚动到最新
+        self.log_display.ensureCursorVisible()
 
     @Slot()
     def terminate_all_processes(self):
@@ -417,24 +418,147 @@ class LogSection(QFrame):
         processes.clear()
         self.log_info("所有进程已终止。")
 
+class SettingsSection(QFrame):
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self.setObjectName(title.replace(' ', '-'))
+        self._init_ui()
+        self.load_settings()
+
+    def _init_ui(self):
+        layout = QVBoxLayout()
+
+        self.llamacpp_path = self._create_line_edit("llama.cpp二进制文件所在的路径（可选），留空则为当前目录下的llama文件夹", "")
+        layout.addWidget(QLabel("llama.cpp 文件夹"))
+        layout.addWidget(self.llamacpp_path)
+
+        self.model_search_paths = TextEdit(self)
+        self.model_search_paths.setPlaceholderText("模型搜索路径（每行一个路径，已经默认包含当前目录）")
+        layout.addWidget(QLabel("模型搜索路径"))
+        layout.addWidget(self.model_search_paths)
+
+        self.save_button = PushButton(FIF.SAVE, '保存设置', self)
+        self.save_button.clicked.connect(self.save_settings)
+        layout.addWidget(self.save_button)
+
+        self.load_settings_button = PushButton(FIF.SYNC, '加载设置', self)
+        self.load_settings_button.clicked.connect(self.load_settings)
+        layout.addWidget(self.load_settings_button)
+
+        self.setLayout(layout)
+
+    def _create_line_edit(self, placeholder, text):
+        line_edit = LineEdit(self)
+        line_edit.setPlaceholderText(placeholder)
+        line_edit.setText(text)
+        return line_edit
+
+    def save_settings(self):
+        settings = {
+            'llamacpp_path': self.llamacpp_path.text(),
+            'model_search_paths': self.model_search_paths.toPlainText().split('\n')
+        }
+        if not os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump({}, f, ensure_ascii=False, indent=4)
+
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config_data = json.load(f)
+            config_data.update(settings)
+
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=4)
+
+        MessageBox("成功", "设置已保存", self).exec()
+
+    def load_settings(self):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+        except FileNotFoundError:
+            return
+        except json.JSONDecodeError:
+            return
+        self.llamacpp_path.setText(settings.get('llamacpp_path', ''))
+        self.model_search_paths.setPlainText('\n'.join(settings.get('model_search_paths', [])))
+        # MessageBox("成功", "设置已加载", self).exec()
+
+class AboutSection(QFrame):
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent=parent)
+        self.setObjectName(text.replace(' ', '-'))
+        self.init_ui()
+
+    def init_ui(self):
+        
+        
+        # 文本
+        text_group = QGroupBox()
+        text_group.setStyleSheet(""" QGroupBox {border: 0px solid lightgray; border-radius: 8px;}""")
+        text_group_layout = QVBoxLayout()
+
+
+        self.text_label = QLabel(self)
+        self.text_label.setStyleSheet("font-size: 25px;")
+        self.text_label.setText("测试版本UI，可能有很多bug")
+        self.text_label.setAlignment(Qt.AlignCenter)
+
+        self.text_label_2 = QLabel(self)
+        self.text_label_2.setStyleSheet("font-size: 18px;")
+        self.text_label_2.setText(f"GUI版本： v{SAKURA_LAUNCHER_GUI_VERSION}")
+        self.text_label_2.setAlignment(Qt.AlignCenter)
+
+        self.hyperlinkButton_1 = HyperlinkButton(
+            url='https://github.com/SakuraLLM/SakuraLLM',
+            text='SakuraLLM 项目地址',
+            parent=self,
+            icon=FIF.LINK
+        )
+
+        self.hyperlinkButton_2 = HyperlinkButton(
+            url='https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI',
+            text='Sakura Launcher GUI 项目地址',
+            parent=self,
+            icon=FIF.LINK
+        )
+
+        text_group_layout.addWidget(self.text_label)
+        text_group_layout.addWidget(self.text_label_2)
+        text_group_layout.addWidget(self.hyperlinkButton_1)
+        text_group_layout.addWidget(self.hyperlinkButton_2)
+        text_group_layout.addStretch(1)  # 添加伸缩项
+        text_group.setLayout(text_group_layout)
+
+        container = QVBoxLayout()
+
+        self.setLayout(container)
+        container.setSpacing(28) # 设置布局内控件的间距为28
+        container.setContentsMargins(50, 70, 50, 30) # 设置布局的边距, 也就是外边框距离，分别为左、上、右、下
+
+        container.addStretch(1)  # 添加伸缩项
+        container.addWidget(text_group)
+        container.addStretch(1)  # 添加伸缩项
 
 class MainWindow(MSFluentWindow):
     def __init__(self):
         super().__init__()
         self.init_navigation()
         self.init_window()
-
-
         atexit.register(self.terminate_all_processes)
 
     def init_navigation(self):
-        self.run_server_section = RunServerSection("运行server")
-        self.run_bench_section = RunBenchmarkSection("运行bench")
+        self.settings_section = SettingsSection("设置")
+        self.run_server_section = RunServerSection("运行server", self)
+        self.run_bench_section = RunBenchmarkSection("运行bench", self)
         self.log_section = LogSection("日志输出")
+        self.about_section = AboutSection("关于")
+
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
         self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
         self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
+        self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
+        self.addSubInterface(self.about_section, FIF.INFO, "关于", position=NavigationItemPosition.BOTTOM)
 
         self.navigationInterface.setCurrentItem(self.run_server_section.objectName())
 
@@ -445,6 +569,7 @@ class MainWindow(MSFluentWindow):
         self.run_bench_section.load_preset_button.clicked.connect(self.run_bench_section.load_presets)
         self.run_server_section.refresh_model_button.clicked.connect(self.run_server_section.refresh_models)
         self.run_bench_section.refresh_model_button.clicked.connect(self.run_bench_section.refresh_models)
+        
         self.setStyleSheet("""
             QLabel {
                 color: #dadada;
@@ -464,59 +589,81 @@ class MainWindow(MSFluentWindow):
         self.setWindowTitle("Sakura 启动器")
         self.resize(800, 600)
 
-        # 居中显示窗口
         desktop = QApplication.screens()[0].availableGeometry()
         w, h = desktop.width(), desktop.height()
         self.move(w // 2 - self.width() // 2, h // 2 - self.height() // 2)
 
+    def get_llamacpp_path(self):
+        path = self.settings_section.llamacpp_path.text()
+        if not path:
+            return os.path.join(CURRENT_DIR, 'llama')
+        return os.path.abspath(path)
+
+    def get_model_search_paths(self):
+        return self.settings_section.model_search_paths.toPlainText().split('\n')
+
+    def _add_quotes(self, path):
+        return f'"{path}"'
+
     def run_llamacpp_server(self):
-        self._run_llamacpp(self.run_server_section, 'server')
+        self._run_llamacpp(self.run_server_section, 'server', 'llama-server')
 
     def run_llamacpp_bench(self):
         self._run_llamacpp(self.run_bench_section, 'llama-bench')
 
-    def _run_llamacpp(self, section, executable):
+    def _run_llamacpp(self, section, old_executable, new_executable=None):
         custom_command = section.custom_command.toPlainText().strip()
-        if section.llamacpp_path.text() == '':
-            llamacpp_path = os.path.join(CURRENT_DIR, 'llama')
-        else:
-            llamacpp_path = os.path.abspath(section.llamacpp_path.text())
+        llamacpp_path = self.get_llamacpp_path()
         exe_extension = '.exe' if sys.platform == 'win32' else ''
-        
+
         if not os.path.exists(llamacpp_path):
             MessageBox("错误", f"llamacpp路径不存在", self).exec()
             return
 
-        executable_path = os.path.join(llamacpp_path, f'{executable}{exe_extension}')
+        model_name = section.model_path.currentText().split(os.sep)[-1]
+        model_path = self._add_quotes(section.model_path.currentText())
+        self.log_info(f"模型路径: {model_path}")
+        self.log_info(f"模型名称: {model_name}")
+        
+
+        # 判断使用哪个可执行文件
+        executable_path = os.path.join(llamacpp_path, f"{new_executable or old_executable}{exe_extension}")
+        if new_executable and not os.path.exists(executable_path):
+            executable_path = os.path.join(llamacpp_path, f"{old_executable}{exe_extension}")
+        elif not os.path.exists(executable_path):
+            MessageBox("错误", f"可执行文件不存在: {executable_path}", self).exec()
+            return
+
+        executable_path = self._add_quotes(executable_path)
 
         if custom_command:
-            command = f"{executable_path} --model {model_path} {custom_command}"
+            command = f'{executable_path} --model {model_path} {custom_command}'
         else:
-            model_path = section.model_path.currentText()
-            command = f"{executable_path} --model {model_path}"
-            command += f" -ngl {section.gpu_layers_spinbox.value()}"
+            command = f'{executable_path} --model {model_path}'
 
-            if executable == 'server':
-                command += f" -c {section.context_length.value()}"
-                command += f" -a {model_path}"
-                command += f" --host {section.host_input.currentText()} --port {section.port_input.text()}"
-                command += f" --log-format {section.log_format_combo.currentText()}"
-                command += f" -np {section.n_parallel_spinbox.value()}"
-
+            if old_executable == 'server' or new_executable == 'llama-server':
+                command += f' -ngl {section.gpu_layers_spinbox.value()}'
+                command += f' -c {section.context_length.value()}'
+                command += f' -a {model_name}'
+                command += f' --host {section.host_input.currentText()} --port {section.port_input.text()}'
+                command += f' --log-format {section.log_format_combo.currentText()}'
+                command += f' -np {section.n_parallel_spinbox.value()}'
 
                 if section.flash_attention_check.isChecked():
-                    command += " -fa"
+                    command += ' -fa'
                 if section.no_mmap_check.isChecked():
-                    command += " --no-mmap"
+                    command += ' --no-mmap'
                 if section.custom_command_append.toPlainText().strip():
-                    command += f" {section.custom_command_append.toPlainText().strip()}"
-            else:
+                    command += f' {section.custom_command_append.toPlainText().strip()}'
+            elif old_executable == 'llama-bench':
+                command += f' -ngl {section.gpu_layers_spinbox.value()}'
+
                 if section.flash_attention_check.isChecked():
-                    command += " -fa 1,0"
+                    command += ' -fa 1,0'
                 if section.no_mmap_check.isChecked():
-                    command += " -mmp 0"
+                    command += ' -mmp 0'
                 if section.custom_command_append.toPlainText().strip():
-                    command += f" {section.custom_command_append.toPlainText().strip()}"
+                    command += f' {section.custom_command_append.toPlainText().strip()}'
 
         if section.gpu_enabled_check.isChecked():
             os.environ["CUDA_VISIBLE_DEVICES"] = str(section.gpu_combo.currentIndex())
@@ -524,24 +671,24 @@ class MainWindow(MSFluentWindow):
 
         self.log_info(f"执行命令: {command}")
 
-        # 在新的终端窗口中运行命令
         if sys.platform == 'win32':
-            subprocess.Popen(f'start cmd /K {command}', shell=True)
+            command = f'start cmd /K "{command}"'
+            subprocess.Popen(command, shell=True)
         else:
-            subprocess.Popen(f'x-terminal-emulator -e "{command}"', shell=True)
+            command = f'x-terminal-emulator -e "{command}"'
+            subprocess.Popen(command, shell=True)
 
         self.log_info("命令已在新的终端窗口中启动。")
 
     def log_info(self, message):
         self.log_section.log_display.append(message)
-        self.log_section.log_display.ensureCursorVisible()  # 确保日志滚动到最新
+        self.log_section.log_display.ensureCursorVisible()
 
     @Slot()
     def terminate_all_processes(self):
         for proc in processes:
             proc.terminate()
         processes.clear()
-
 
 if __name__ == "__main__":
     setTheme(Theme.DARK)
@@ -550,3 +697,4 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
+        

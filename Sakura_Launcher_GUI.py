@@ -1,10 +1,12 @@
 """
 #TODO: 
 1. SpinBox吸附256的倍数。
-
+2. batch-benchmark支持。
+3. 直接使用QProcess启动。
 """
 
 
+from math import log
 import sys
 import os
 import json
@@ -12,7 +14,7 @@ import subprocess
 import atexit
 from functools import partial
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QTabWidget, QWidget, QStackedWidget
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QTabWidget, QWidget, QStackedWidget, QSpacerItem
 from PySide6.QtGui import QIcon, QColor
 from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget, InfoBar, InfoBarPosition
 
@@ -80,21 +82,8 @@ class RunSection(QFrame):
         self.title = title
 
     def _init_common_ui(self, layout):
-        layout.addLayout(self._create_model_selection_layout())
-        layout.addWidget(QLabel("配置预设选择"))
-        self.config_preset_combo = EditableComboBox(self)
-        self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
-        layout.addWidget(self.config_preset_combo)
-
-        self.custom_command = TextEdit(self)
-        self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
-        layout.addWidget(self.custom_command)
-
-        self.custom_command_append = TextEdit(self)
-        self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
-        layout.addWidget(self.custom_command_append)
-
-        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 1, 200, 1))
+        # 跳过
+        pass
 
     def _create_gpu_selection_layout(self):
         layout = QHBoxLayout()
@@ -299,24 +288,73 @@ class RunServerSection(RunSection):
 
     def _init_ui(self):
         layout = QVBoxLayout()
-        self._init_common_ui(layout)
+
+        buttons_group = QGroupBox("")
+        buttons_layout = QHBoxLayout()
+
+
+        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
+        self.save_preset_button.clicked.connect(self.save_preset)
+        self.save_preset_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.save_preset_button)
+
+        self.load_preset_button = PushButton(FIF.SYNC, '刷新预设', self)
+        self.load_preset_button.clicked.connect(self.load_presets)
+        self.load_preset_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.load_preset_button)
+
+        self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
+        self.run_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.run_button)
+
+        # 按钮布局右对齐
+        buttons_layout.setAlignment(Qt.AlignRight)
+        buttons_group.setStyleSheet(""" QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}""")
+
+        buttons_group.setLayout(buttons_layout)
+        layout.addWidget(buttons_group)
+
+        
+        layout.addWidget(QLabel("模型选择"))
+        layout.addLayout(self._create_model_selection_layout())
+        layout.addWidget(QLabel("配置预设选择"))
+        self.config_preset_combo = EditableComboBox(self)
+        self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
+        layout.addWidget(self.config_preset_combo)
+
+        ip_port_log_layout = QHBoxLayout()
+
+        ip_layout = QVBoxLayout()
+        self.host_input = self._create_editable_combo_box(["127.0.0.1", "0.0.0.0"])
+        ip_layout.addWidget(QLabel("主机地址 --host"))
+        ip_layout.addWidget(self.host_input)
+
+        host_layout = QVBoxLayout()
+        self.port_input = self._create_line_edit("", "8080")
+        host_layout.addWidget(QLabel("端口 --port"))
+        host_layout.addWidget(self.port_input)
+
+        log_layout = QVBoxLayout()
+        self.log_format_combo = self._create_editable_combo_box(["text", "json"])
+        log_layout.addWidget(QLabel("日志格式 --log-format"))
+        log_layout.addWidget(self.log_format_combo)
+
+
+        ip_port_log_layout.addLayout(ip_layout)
+        ip_port_log_layout.addLayout(host_layout)
+        ip_port_log_layout.addLayout(log_layout)
+
+        layout.addLayout(ip_port_log_layout)
+
+
+
+        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 1, 200, 1))
 
         layout.addWidget(QLabel("上下文长度 -c"))
         layout.addLayout(self._create_context_length_layout())
 
         layout.addLayout(self._create_slider_spinbox_layout("并行工作线程数 -np", "n_parallel", 1, 1, 32, 1))
 
-        self.host_input = self._create_editable_combo_box(["127.0.0.1", "0.0.0.0"])
-        layout.addWidget(QLabel("主机地址 --host"))
-        layout.addWidget(self.host_input)
-
-        self.port_input = self._create_line_edit("", "8080")
-        layout.addWidget(QLabel("端口 --port"))
-        layout.addWidget(self.port_input)
-
-        self.log_format_combo = self._create_editable_combo_box(["text", "json"])
-        layout.addWidget(QLabel("日志格式 --log-format"))
-        layout.addWidget(self.log_format_combo)
 
         self.flash_attention_check = self._create_check_box("启用 Flash Attention -fa", True)
         layout.addWidget(self.flash_attention_check)
@@ -326,16 +364,13 @@ class RunServerSection(RunSection):
 
         layout.addLayout(self._create_gpu_selection_layout())
 
-        self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
-        layout.addWidget(self.run_button)
+        self.custom_command_append = TextEdit(self)
+        self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
+        layout.addWidget(self.custom_command_append)
 
-        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
-        self.save_preset_button.clicked.connect(self.save_preset)
-        layout.addWidget(self.save_preset_button)
-
-        self.load_preset_button = PushButton(FIF.SYNC, '刷新预设', self)
-        self.load_preset_button.clicked.connect(self.load_presets)
-        layout.addWidget(self.load_preset_button)
+        self.custom_command = TextEdit(self)
+        self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
+        layout.addWidget(self.custom_command)
 
         self.setLayout(layout)
 
@@ -368,7 +403,37 @@ class RunBenchmarkSection(RunSection):
 
     def _init_ui(self):
         layout = QVBoxLayout()
-        self._init_common_ui(layout)
+
+        buttons_group = QGroupBox("")
+        buttons_layout = QHBoxLayout()
+
+        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
+        self.save_preset_button.clicked.connect(self.save_preset)
+        self.save_preset_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.save_preset_button)
+
+        self.load_preset_button = PushButton(FIF.SYNC, '刷新预设', self)
+        self.load_preset_button.clicked.connect(self.load_presets)
+        self.load_preset_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.load_preset_button)
+
+        self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
+        self.run_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.run_button)
+
+        buttons_layout.setAlignment(Qt.AlignRight)
+        buttons_group.setStyleSheet(""" QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}""")
+        buttons_group.setLayout(buttons_layout)
+        layout.addWidget(buttons_group)
+
+        layout.addWidget(QLabel("模型选择"))
+        layout.addLayout(self._create_model_selection_layout())
+        layout.addWidget(QLabel("配置预设选择"))
+        self.config_preset_combo = EditableComboBox(self)
+        self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
+        layout.addWidget(self.config_preset_combo)
+
+        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 1, 200, 1))
 
         self.flash_attention_check = self._create_check_box("启用 Flash Attention -fa", True)
         layout.addWidget(self.flash_attention_check)
@@ -378,16 +443,13 @@ class RunBenchmarkSection(RunSection):
 
         layout.addLayout(self._create_gpu_selection_layout())
 
-        self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
-        layout.addWidget(self.run_button)
+        self.custom_command_append = TextEdit(self)
+        self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
+        layout.addWidget(self.custom_command_append)
 
-        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
-        self.save_preset_button.clicked.connect(self.save_preset)
-        layout.addWidget(self.save_preset_button)
-
-        self.load_preset_button = PushButton(FIF.SYNC, '刷新预设', self)
-        self.load_preset_button.clicked.connect(self.load_presets)
-        layout.addWidget(self.load_preset_button)
+        self.custom_command = TextEdit(self)
+        self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
+        layout.addWidget(self.custom_command)
 
         self.setLayout(layout)
         
@@ -405,7 +467,7 @@ class LogSection(QFrame):
         self.log_display.setReadOnly(True)
         layout.addWidget(self.log_display)
 
-        self.clear_log_button = PushButton("清空日志", self)
+        self.clear_log_button = PushButton(FIF.DELETE, "清空日志", self)
         self.clear_log_button.clicked.connect(self.clear_log)
         layout.addWidget(self.clear_log_button)
 
@@ -445,7 +507,7 @@ class SettingsSection(QFrame):
         layout.addWidget(QLabel("模型搜索路径"))
         layout.addWidget(self.model_search_paths)
 
-        self.save_button = PushButton(FIF.SAVE, '保存设置', self)
+        self.save_button = PrimaryPushButton(FIF.SAVE, '保存设置', self)
         self.save_button.clicked.connect(self.save_settings)
         layout.addWidget(self.save_button)
 
@@ -814,7 +876,7 @@ class MainWindow(MSFluentWindow):
         icon = get_resource_path(ICON_FILE)
         self.setWindowIcon(QIcon(icon))
         self.setWindowTitle("Sakura 启动器")
-        self.resize(800, 600)
+        self.resize(600, 400)
 
         desktop = QApplication.screens()[0].availableGeometry()
         w, h = desktop.width(), desktop.height()

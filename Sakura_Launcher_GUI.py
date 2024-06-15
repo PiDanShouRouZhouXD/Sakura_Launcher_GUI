@@ -5,8 +5,6 @@
 3. 直接使用QProcess启动。
 """
 
-
-from math import log
 import sys
 import os
 import json
@@ -14,7 +12,7 @@ import subprocess
 import atexit
 from functools import partial
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QTabWidget, QWidget, QStackedWidget, QSpacerItem
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QStackedWidget
 from PySide6.QtGui import QIcon, QColor
 from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget, InfoBar, InfoBarPosition
 

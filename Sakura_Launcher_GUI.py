@@ -4,10 +4,11 @@ import os
 import json
 import subprocess
 import atexit
+from functools import partial
 from PySide6.QtCore import Qt, Signal, QObject, Slot
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QTabWidget, QWidget, QStackedWidget
 from PySide6.QtGui import QIcon, QColor
-from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition
+from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget
 
 def get_self_path():
     if getattr(sys, 'frozen', False):
@@ -192,9 +193,20 @@ class RunSection(QFrame):
             MessageBox("错误", "预设名称不能为空", self).exec()
             return
 
-        presets = self.load_presets_from_file()
-        if self.title not in presets:
-            presets[self.title] = []
+        # 读取当前配置
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        if not os.path.exists(config_file_path):
+            with open(config_file_path, 'w', encoding='utf-8') as f:
+                json.dump({}, f, ensure_ascii=False, indent=4)
+        
+        with open(config_file_path, 'r', encoding='utf-8') as f:
+            try:
+                current_settings = json.load(f)
+            except json.JSONDecodeError:
+                current_settings = {}
+
+        # 更新或新增预设
+        preset_section = current_settings.get(self.title, [])
         new_preset = {
             'name': preset_name,
             'config': {
@@ -205,11 +217,11 @@ class RunSection(QFrame):
                 'no_mmap': self.no_mmap_check.isChecked(),
                 'gpu_enabled': self.gpu_enabled_check.isChecked(),
                 'gpu': self.gpu_combo.currentText(),
-                'model_path': self.model_path.currentText()  # 新增一行保存模型路径
+                'model_path': self.model_path.currentText()
             }
         }
 
-        if hasattr(self, 'context_length'):
+        if self.title == '运行server':
             new_preset['config'].update({
                 'context_length': self.context_length.value(),
                 'n_parallel': self.n_parallel_spinbox.value(),
@@ -218,16 +230,18 @@ class RunSection(QFrame):
                 'log_format': self.log_format_combo.currentText()
             })
 
-        for i, preset in enumerate(presets[self.title]):
+        for i, preset in enumerate(preset_section):
             if preset['name'] == preset_name:
-                presets[self.title][i] = new_preset
+                preset_section[i] = new_preset
                 break
         else:
-            presets[self.title].append(new_preset)
+            preset_section.append(new_preset)
 
-        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        current_settings[self.title] = preset_section
+
+        # 保存配置
         with open(config_file_path, 'w', encoding='utf-8') as f:
-            json.dump(presets, f, ensure_ascii=False, indent=4)
+            json.dump(current_settings, f, ensure_ascii=False, indent=4)
 
         self.load_presets()
         MessageBox("成功", "预设已保存", self).exec()
@@ -253,16 +267,17 @@ class RunSection(QFrame):
                     self.custom_command_append.setPlainText(config.get('custom_command_append', ''))
                     self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 99))
                     self.model_path.setCurrentText(config.get('model_path', ''))  # 加载模型路径
-                    if hasattr(self, 'context_length'):
-                        self.context_length.setValue(config.get('context_length', 1024))
-                    if hasattr(self, 'n_parallel_spinbox'):
-                        self.n_parallel_spinbox.setValue(config.get('n_parallel', 1))
-                    if hasattr(self, 'host_input'):
-                        self.host_input.setText(config.get('host', '127.0.0.1'))
-                    if hasattr(self, 'port_input'):
-                        self.port_input.setText(config.get('port', '8080'))
-                    if hasattr(self, 'log_format_combo'):
-                        self.log_format_combo.setText(config.get('log_format', 'text'))
+                    if self.title == '运行server':
+                        if hasattr(self, 'context_length'):
+                            self.context_length.setValue(config.get('context_length', 1024))
+                        if hasattr(self, 'n_parallel_spinbox'):
+                            self.n_parallel_spinbox.setValue(config.get('n_parallel', 1))
+                        if hasattr(self, 'host_input'):
+                            self.host_input.setText(config.get('host', '127.0.0.1'))
+                        if hasattr(self, 'port_input'):
+                            self.port_input.setText(config.get('port', '8080'))
+                        if hasattr(self, 'log_format_combo'):
+                            self.log_format_combo.setText(config.get('log_format', 'text'))
                     self.flash_attention_check.setChecked(config.get('flash_attention', True))
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
@@ -539,6 +554,224 @@ class AboutSection(QFrame):
         container.addWidget(text_group)
         container.addStretch(1)  # 添加伸缩项
 
+from PySide6.QtCore import QTimer, Qt
+
+class ConfigEditor(QFrame):
+    LONG_PRESS_TIME = 500  # 设置长按延迟时间（毫秒）
+
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self.setObjectName(title.replace(' ', '-'))
+        self.setStyleSheet("""
+            Demo{background: white}
+            QLabel{
+                font: 20px 'Segoe UI';
+                background: rgb(242,242,242);
+                border-radius: 8px;
+            }
+        """)
+        self.resize(400, 400)
+        self.init_ui()
+        self.load_settings()
+
+    def init_ui(self):
+        self.pivot = SegmentedWidget(self)
+        self.stacked_widget = QStackedWidget(self)
+        self.layout = QVBoxLayout(self)
+        
+        self.run_server_section = QWidget(self)
+        self.run_bench_section = QWidget(self)
+        
+        self.init_run_server_section()
+        self.init_run_bench_section()
+
+        self.add_sub_interface(self.run_server_section, 'run_server_section', 'Server')
+        self.add_sub_interface(self.run_bench_section, 'run_bench_section', 'Bench')
+
+        save_button = PrimaryPushButton(FIF.SAVE, '保存配置预设', self)
+        save_button.clicked.connect(self.save_settings)
+
+        load_button = PushButton(FIF.SYNC, '加载配置预设', self)
+        load_button.clicked.connect(self.load_settings)
+
+        self.layout.addWidget(self.pivot)
+        self.layout.addWidget(self.stacked_widget)
+        self.layout.addWidget(save_button)
+        self.layout.addWidget(load_button)
+
+        self.stacked_widget.currentChanged.connect(self.on_current_index_changed)
+        self.stacked_widget.setCurrentWidget(self.run_server_section)
+        self.pivot.setCurrentItem(self.run_server_section.objectName())
+
+        self.setLayout(self.layout)
+
+    def add_sub_interface(self, widget: QWidget, object_name, text):
+        widget.setObjectName(object_name)
+        self.stacked_widget.addWidget(widget)
+        self.pivot.addItem(
+            routeKey=object_name,
+            text=text,
+            onClick=lambda: self.stacked_widget.setCurrentWidget(widget),
+        )
+
+    def on_current_index_changed(self, index):
+        widget = self.stacked_widget.widget(index)
+        self.pivot.setCurrentItem(widget.objectName())
+
+    def init_run_server_section(self):
+        layout = QVBoxLayout(self.run_server_section)
+        self.run_server_table = self.create_config_table()
+        layout.addWidget(self.run_server_table)
+        self.run_server_section.setLayout(layout)
+
+    def init_run_bench_section(self):
+        layout = QVBoxLayout(self.run_bench_section)
+        self.run_bench_table = self.create_config_table()
+        layout.addWidget(self.run_bench_table)
+        self.run_bench_section.setLayout(layout)
+
+    def create_config_table(self):
+        table = TableWidget()
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(['配置名称', '上移', '下移', '删除'])
+        table.verticalHeader().hide()
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        return table
+
+    def save_settings(self):
+        server_configs = self.table_to_config(self.run_server_table)
+        bench_configs = self.table_to_config(self.run_bench_table)
+
+        settings = {
+            '运行server': server_configs,
+            '运行bench': bench_configs
+        }
+
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        if not os.path.exists(config_file_path):
+            with open(config_file_path, 'w', encoding='utf-8') as f:
+                json.dump({}, f, ensure_ascii=False, indent=4)
+
+        with open(config_file_path, 'r', encoding='utf-8') as f:
+            try:
+                current_settings = json.load(f)
+            except json.JSONDecodeError:
+                current_settings = {}
+
+        current_settings.update(settings)
+
+        with open(config_file_path, 'w', encoding='utf-8') as f:
+            json.dump(current_settings, f, ensure_ascii=False, indent=4)
+
+        MessageBox("成功", "设置已保存", self).exec()
+
+    def load_settings(self):
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        try:
+            with open(config_file_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            settings = {}
+
+        self.config_to_table(self.run_server_table, settings.get('运行server', []))
+        self.config_to_table(self.run_bench_table, settings.get('运行bench', []))
+
+    def table_to_config(self, table):
+        configs = []
+        for row in range(table.rowCount()):
+            name_item = table.item(row, 0)
+            if name_item:
+                config_name = name_item.text()
+                config = name_item.data(Qt.UserRole)
+                configs.append({'name': config_name, 'config': config})
+        return configs
+
+    def config_to_table(self, table, configs):
+        table.setRowCount(len(configs))
+        for row, config in enumerate(configs):
+            name_item = QTableWidgetItem(config['name'])
+            name_item.setData(Qt.UserRole, config['config'])
+            table.setItem(row, 0, name_item)
+            table.setCellWidget(row, 1, self.create_move_up_button(table, row))
+            table.setCellWidget(row, 2, self.create_move_down_button(table, row))
+            table.setCellWidget(row, 3, self.create_delete_button(table))
+
+    def create_move_up_button(self, table, row):
+        button = TransparentPushButton(FIF.UP, "上移", self)
+        button.pressed.connect(lambda: self.start_timer(button, table, row, self.move_up, self.move_to_top))
+        button.released.connect(lambda: self.stop_timer(button))
+        button.setToolTip("向上移动配置，长按可快速移动到顶部")
+        return button
+
+    def create_move_down_button(self, table, row):
+        button = TransparentPushButton(FIF.DOWN, "下移", self)
+        button.pressed.connect(lambda: self.start_timer(button, table, row, self.move_down, self.move_to_bottom))
+        button.released.connect(lambda: self.stop_timer(button))
+        button.setToolTip("向下移动配置，长按可快速移动到底部")
+        return button
+
+    def create_delete_button(self, table):
+        button = TransparentPushButton(FIF.DELETE, "删除", self)
+        button.clicked.connect(partial(self.delete_row, table, button))
+        return button
+
+    def start_timer(self, button, table, row, move_func, long_press_func):
+        self.click_timer = QTimer()
+        self.click_timer.timeout.connect(lambda: self.perform_long_press_action(table, row, long_press_func))
+        self.click_timer.start(self.LONG_PRESS_TIME)  # 设置长按延迟
+        button.click_action = lambda: move_func(table, row)
+
+    def stop_timer(self, button):
+        if hasattr(self, 'click_timer'):
+            if self.click_timer.isActive():
+                self.click_timer.stop()
+                button.click_action()
+            delattr(self, 'click_timer')
+
+    def perform_long_press_action(self, table, row, long_press_func):
+        self.click_timer.stop()
+        long_press_func(table, row)
+
+    def move_up(self, table, row):
+        if row > 0:
+            self.swap_rows(table, row, row - 1)
+            table.selectRow(row - 1)
+
+    def move_down(self, table, row):
+        if row < table.rowCount() - 1:
+            self.swap_rows(table, row, row + 1)
+            table.selectRow(row + 1)
+
+    def move_to_top(self, table, row):
+        self.move_to(table, row, 0)
+
+    def move_to_bottom(self, table, row):
+        self.move_to(table, row, table.rowCount() - 1)
+
+    def move_to(self, table, row, target_row):
+        while row != target_row:
+            if row < target_row:
+                self.swap_rows(table, row, row + 1)
+                row += 1
+            else:
+                self.swap_rows(table, row, row - 1)
+                row -= 1
+        table.selectRow(target_row)
+
+    def swap_rows(self, table, row1, row2):
+        for col in range(table.columnCount()):
+            item1 = table.takeItem(row1, col)
+            item2 = table.takeItem(row2, col)
+            if item1 and item2:
+                table.setItem(row1, col, QTableWidgetItem(item2))
+                table.setItem(row2, col, QTableWidgetItem(item1))
+
+    def delete_row(self, table, button):
+        index = table.indexAt(button.pos())
+        if index.isValid():
+            table.removeRow(index.row())
+
+
 class MainWindow(MSFluentWindow):
     def __init__(self):
         super().__init__()
@@ -552,11 +785,13 @@ class MainWindow(MSFluentWindow):
         self.run_bench_section = RunBenchmarkSection("运行bench", self)
         self.log_section = LogSection("日志输出")
         self.about_section = AboutSection("关于")
+        self.config_editor_section = ConfigEditor("配置编辑")
 
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
         self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
         self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
+        self.addSubInterface(self.config_editor_section, FIF.EDIT, "配置编辑")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
         self.addSubInterface(self.about_section, FIF.INFO, "关于", position=NavigationItemPosition.BOTTOM)
 

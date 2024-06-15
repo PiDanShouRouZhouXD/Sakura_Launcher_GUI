@@ -1,14 +1,20 @@
-from math import e
+"""
+#TODO: 
+1. SpinBox吸附256的倍数。
+
+"""
+
+
 import sys
 import os
 import json
 import subprocess
 import atexit
 from functools import partial
-from PySide6.QtCore import Qt, Signal, QObject, Slot
+from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QTabWidget, QWidget, QStackedWidget
 from PySide6.QtGui import QIcon, QColor
-from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget
+from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget, InfoBar, InfoBarPosition
 
 def get_self_path():
     if getattr(sys, 'frozen', False):
@@ -72,21 +78,6 @@ class RunSection(QFrame):
         self.main_window = main_window
         self.setObjectName(title.replace(' ', '-'))
         self.title = title
-        self.config_preset_combo = None
-        self.custom_command = None
-        self.custom_command_append = None
-        self.gpu_layers_spinbox = None
-        self.model_path = None
-        self.refresh_model_button = None
-        self.gpu_enabled_check = None
-        self.gpu_combo = None
-        self.flash_attention_check = None
-        self.no_mmap_check = None
-        self.context_length = None
-        self.n_parallel_spinbox = None
-        self.host_input = None
-        self.port_input = None
-        self.log_format_combo = None
 
     def _init_common_ui(self, layout):
         layout.addLayout(self._create_model_selection_layout())
@@ -103,7 +94,7 @@ class RunSection(QFrame):
         self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
         layout.addWidget(self.custom_command_append)
 
-        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 999, 1, 999, 1))
+        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 1, 200, 1))
 
     def _create_gpu_selection_layout(self):
         layout = QHBoxLayout()
@@ -245,7 +236,7 @@ class RunSection(QFrame):
             json.dump(current_settings, f, ensure_ascii=False, indent=4)
 
         self.load_presets()
-        MessageBox("成功", "预设已保存", self).exec()
+        self.main_window.createSuccessInfoBar("成功", "预设已保存")
 
     def load_presets(self):
         self.config_preset_combo.clear()
@@ -435,8 +426,9 @@ class LogSection(QFrame):
         self.log_info("所有进程已终止。")
 
 class SettingsSection(QFrame):
-    def __init__(self, title, parent=None):
+    def __init__(self, title,main_window, parent=None):
         super().__init__(parent)
+        self.main_window = main_window
         self.setObjectName(title.replace(' ', '-'))
         self._init_ui()
         self.load_settings()
@@ -485,7 +477,7 @@ class SettingsSection(QFrame):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config_data, f, ensure_ascii=False, indent=4)
 
-        MessageBox("成功", "设置已保存", self).exec()
+        self.main_window.createSuccessInfoBar("成功", "设置已保存")
 
     def load_settings(self):
         try:
@@ -497,7 +489,7 @@ class SettingsSection(QFrame):
             return
         self.llamacpp_path.setText(settings.get('llamacpp_path', ''))
         self.model_search_paths.setPlainText('\n'.join(settings.get('model_search_paths', [])))
-        # MessageBox("成功", "设置已加载", self).exec()
+
 
 class AboutSection(QFrame):
     def __init__(self, text: str, parent=None):
@@ -555,13 +547,12 @@ class AboutSection(QFrame):
         container.addWidget(text_group)
         container.addStretch(1)  # 添加伸缩项
 
-from PySide6.QtCore import QTimer, Qt
-
 class ConfigEditor(QFrame):
     LONG_PRESS_TIME = 500  # 设置长按延迟时间（毫秒）
 
-    def __init__(self, title, parent=None):
+    def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
+        self.main_window = main_window
         self.setObjectName(title.replace(' ', '-'))
         self.setStyleSheet("""
             Demo{background: white}
@@ -664,7 +655,7 @@ class ConfigEditor(QFrame):
         with open(config_file_path, 'w', encoding='utf-8') as f:
             json.dump(current_settings, f, ensure_ascii=False, indent=4)
 
-        MessageBox("成功", "设置已保存", self).exec()
+        self.main_window.createSuccessInfoBar("成功", "配置预设已保存")
 
     def load_settings(self):
         config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
@@ -781,12 +772,12 @@ class MainWindow(MSFluentWindow):
         atexit.register(self.terminate_all_processes)
 
     def init_navigation(self):
-        self.settings_section = SettingsSection("设置")
+        self.settings_section = SettingsSection("设置", self)
         self.run_server_section = RunServerSection("运行server", self)
         self.run_bench_section = RunBenchmarkSection("运行bench", self)
         self.log_section = LogSection("日志输出")
         self.about_section = AboutSection("关于")
-        self.config_editor_section = ConfigEditor("配置编辑")
+        self.config_editor_section = ConfigEditor("配置编辑", self)
 
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
@@ -828,6 +819,17 @@ class MainWindow(MSFluentWindow):
         desktop = QApplication.screens()[0].availableGeometry()
         w, h = desktop.width(), desktop.height()
         self.move(w // 2 - self.width() // 2, h // 2 - self.height() // 2)
+
+    def createSuccessInfoBar(self, title, content):
+        InfoBar.success(
+            title=title,
+            content=content,
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP_RIGHT,
+            duration=2000,
+            parent=self
+        )
 
     def get_llamacpp_path(self):
         path = self.settings_section.llamacpp_path.text()

@@ -174,7 +174,8 @@ class RunSection(QFrame):
         search_paths = [CURRENT_DIR] + self.main_window.get_model_search_paths()
         for path in search_paths:
             if os.path.exists(path) and os.path.isdir(path):
-                models.extend([os.path.join(path, f) for f in os.listdir(path) if f.endswith('.gguf')])
+                for root, _, files in os.walk(path):
+                    models.extend([os.path.join(root, f) for f in files if f.endswith('.gguf')])
         self.model_path.addItems(models)
 
     def refresh_gpus(self):

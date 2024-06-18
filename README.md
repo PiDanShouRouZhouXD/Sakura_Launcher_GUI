@@ -36,7 +36,10 @@
 
 
 ### **界面预览**
-<div align=center><img src="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/assets/38401147/7a1b173b-17df-4bf1-a731-5cb037c2fee7" width="720px"></div>
+<div align=center><img src="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/assets/38401147/67f1097d-7673-42a4-8f98-7161c9896b9f" width="540px"></div>
+
+<div align=center><img src="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/assets/38401147/5c15ac3d-35ef-43e8-bc53-afca0c3402e9" width="540px"></div>
+
 
 ### **安装步骤**
 

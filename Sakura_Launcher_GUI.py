@@ -9,10 +9,17 @@ import json
 import subprocess
 import atexit
 from functools import partial
-from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer
+from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QThread
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QStackedWidget
 from PySide6.QtGui import QIcon, QColor
-from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget, InfoBar, InfoBarPosition
+from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget, InfoBar, InfoBarPosition, ProgressBar
+
+
+import logging
+import subprocess
+import requests
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 def get_self_path():
     if getattr(sys, 'frozen', False):
@@ -31,7 +38,6 @@ CONFIG_FILE = 'sakura-launcher_config.json'
 ICON_FILE = 'icon.png'
 SAKURA_LAUNCHER_GUI_VERSION = '0.0.3'
 
-print(CURRENT_DIR)
 
 processes = []
 
@@ -636,6 +642,218 @@ class LogSection(QFrame):
         processes.clear()
         self.log_info("所有进程已终止。")
 
+class DownloadThread(QThread):
+    progress = Signal(int)
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, url, filename):
+        super().__init__()
+        self.url = url
+        self.filename = filename
+
+    def run(self):
+        try:
+            response = requests.get(self.url, stream=True)
+            total_size = int(response.headers.get('content-length', 0))
+            block_size = 1024
+            downloaded = 0
+
+            with open(self.filename, 'wb') as file:
+                for data in response.iter_content(block_size):
+                    file.write(data)
+                    downloaded += len(data)
+                    if total_size:
+                        progress = int((downloaded / total_size) * 100)
+                        self.progress.emit(progress)
+
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(str(e))
+
+class DownloadSection(QFrame):
+    def __init__(self, title, main_window, parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.setObjectName(title.replace(' ', '-'))
+        self.resize(400, 400)
+        self.init_ui()
+
+    def init_ui(self):
+        self.pivot = SegmentedWidget(self)
+        self.stacked_widget = QStackedWidget(self)
+        self.layout = QVBoxLayout(self)
+
+        self.model_download_section = QWidget(self)
+        self.llamacpp_download_section = QWidget(self)
+
+        self.init_model_download_section()
+        self.init_llamacpp_download_section()
+
+        self.add_sub_interface(self.model_download_section,
+                               'model_download_section', '模型下载')
+        self.add_sub_interface(
+            self.llamacpp_download_section, 'llamacpp_download_section', 'llama.cpp下载')
+
+        self.layout.addWidget(self.pivot)
+        self.layout.addWidget(self.stacked_widget)
+
+        # 添加全局进度条
+        self.global_progress_bar = ProgressBar(self)
+        self.layout.addWidget(self.global_progress_bar)
+
+        self.stacked_widget.currentChanged.connect(
+            self.on_current_index_changed)
+        self.stacked_widget.setCurrentWidget(self.model_download_section)
+        self.pivot.setCurrentItem(self.model_download_section.objectName())
+
+        self.setLayout(self.layout)
+
+    def add_sub_interface(self, widget: QWidget, object_name, text):
+        widget.setObjectName(object_name)
+        self.stacked_widget.addWidget(widget)
+        self.pivot.addItem(
+            routeKey=object_name,
+            text=text,
+            onClick=lambda: self.stacked_widget.setCurrentWidget(widget),
+        )
+
+    def on_current_index_changed(self, index):
+        widget = self.stacked_widget.widget(index)
+        self.pivot.setCurrentItem(widget.objectName())
+
+    def init_model_download_section(self):
+        layout = QVBoxLayout(self.model_download_section)
+
+        # 添加说明性文字
+        description = QLabel(
+            "您可以在这里下载不同版本的模型，或手动从huggingface下载模型。\n8G以下显存推荐使用GalTransl-7B-v1.5_IQ4_XS.gguf，\n8G以上显存推荐使用Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf。\n模型会下载到程序所在的目录。")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        self.model_download_table = self.create_download_table()
+        self.add_download_item(self.model_download_table,
+                               "GalTransl-7B-v1.5_IQ4_XS.gguf", self.download_model)
+        self.add_download_item(
+            self.model_download_table, "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf", self.download_model)
+        layout.addWidget(self.model_download_table)
+        self.model_download_section.setLayout(layout)
+
+    def init_llamacpp_download_section(self):
+        layout = QVBoxLayout(self.llamacpp_download_section)
+
+        # 添加说明性文字
+        description = QLabel(
+            "您可以在这里下载不同版本的llama.cpp，或手动从Github下载发行版。\nNvidia显卡请选择CUDA版本下载，\nAMD显卡请查看下面的AMD显卡支持列表，\n如果在列表中，请选择ROCm版本下载，\n如果不在列表中，请选择Vulkan版本下载或手动编译。\n注意，Vulkan版本现在还不支持IQ系列的量化。\nllama.cpp会下载到程序所在的目录的llama文件夹内。\n")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        amd_support_list = """
+AMD显卡支持列表：
+ - RX 7900 系列显卡
+ - RX 7800 系列显卡
+ - RX 7700 系列显卡
+ - RX 6900/6800 系列显卡
+ - RX 6700 系列显卡
+        """
+        self.amd_support_label = QLabel(self)
+        self.amd_support_label.setText(amd_support_list)
+        self.amd_support_label.setWordWrap(True)
+        layout.addWidget(self.amd_support_label)
+
+        self.llamacpp_download_table = self.create_download_table()
+        self.add_download_item(self.llamacpp_download_table,
+                               "CUDA 版本", self.download_llamacpp)
+        self.add_download_item(self.llamacpp_download_table,
+                               "ROCm 版本 (感谢Sora维护)", self.download_llamacpp)
+        self.add_download_item(self.llamacpp_download_table,
+                               "Vulkan 版本", self.download_llamacpp)
+        layout.addWidget(self.llamacpp_download_table)
+
+        self.llamacpp_download_section.setLayout(layout)
+
+    def create_download_table(self):
+        table = TableWidget()
+        table.setColumnCount(2)
+        table.setHorizontalHeaderLabels(['名称', '操作'])
+        table.verticalHeader().hide()
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        table.horizontalHeader().setStretchLastSection(True)
+        return table
+
+    def add_download_item(self, table, name, download_function):
+        row = table.rowCount()
+        table.insertRow(row)
+
+        name_item = QTableWidgetItem(name)
+        table.setItem(row, 0, name_item)
+
+        download_button = TransparentPushButton(FIF.DOWNLOAD, "下载")
+        download_button.clicked.connect(lambda: download_function(name))
+        table.setCellWidget(row, 1, download_button)
+
+    def download_model(self, model_name):
+        if model_name == "GalTransl-7B-v1.5_IQ4_XS.gguf":
+            url = "https://hf-mirror.com/SakuraLLM/GalTransl-7B-v1.5/resolve/main/GalTransl-7B-v1.5-IQ4_XS.gguf"
+        elif model_name == "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf":
+            url = "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf"
+        else:
+            self.on_download_error("未知的模型名称")
+            return
+
+        self.start_download(url, model_name)
+
+    def download_llamacpp(self, version):
+        if version == "CUDA 版本":
+            url = "https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-cuda-cu12.2.0-x64.zip"
+        elif version == "ROCm 版本 (感谢Sora维护)":
+            url = "https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-rocm-avx2-x64.zip"
+        elif version == "Vulkan 版本":
+            url = "https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-vulkan-x64.zip"
+        else:
+            self.on_download_error("未知的版本")
+            return
+
+        self.start_download(url, f"llama.cpp_{version}.zip")
+
+    def unzip_llamacpp(self, filename):
+        import zipfile
+        #解压到llama文件夹
+        llama_folder = os.path.join(CURRENT_DIR, 'llama')
+        file_path = os.path.join(CURRENT_DIR, filename)
+        print(f"Unzipping {filename} to {llama_folder}")
+        if not os.path.exists(llama_folder):
+            os.mkdir(llama_folder)
+        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+            # 解压所有文件到llama文件夹，覆盖已存在的文件
+            zip_ref.extractall(llama_folder)
+
+
+        
+    # 直接使用requests下载
+    def start_download(self, url, filename):
+        self.download_thread = DownloadThread(url, filename)
+        self.download_thread.progress.connect(self.global_progress_bar.setValue)
+        self.download_thread.finished.connect(self.on_download_finished)
+        self.download_thread.error.connect(self.on_download_error)
+        self.download_thread.start()
+        self.main_window.createSuccessInfoBar("下载中", "文件正在下载，请耐心等待，下载进度请关注最下方的进度条。")
+
+    def on_download_finished(self):
+        self.main_window.createSuccessInfoBar("下载完成", "文件已成功下载")
+        for file in os.listdir(CURRENT_DIR):
+            if file.endswith(".zip") and file.startswith("llama.cpp_"):
+                self.unzip_llamacpp(file)
+                self.main_window.createSuccessInfoBar("解压完成", "已经将llama.cpp解压到程序所在目录的llama文件夹内。")
+                os.remove(os.path.join(CURRENT_DIR, file))
+                break
+            
+
+    def on_download_error(self, error_message):
+        logger.error(f"Download error: {error_message}")
+        QApplication.processEvents()  # 确保UI更新
+        MessageBox("错误", f"下载失败: {error_message}", self).exec()
+
 class SettingsSection(QFrame):
     def __init__(self, title,main_window, parent=None):
         super().__init__(parent)
@@ -990,6 +1208,7 @@ class MainWindow(MSFluentWindow):
         self.log_section = LogSection("日志输出")
         self.about_section = AboutSection("关于")
         self.config_editor_section = ConfigEditor("配置编辑", self)
+        self.dowload_section = DownloadSection("下载", self)
 
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
@@ -997,6 +1216,7 @@ class MainWindow(MSFluentWindow):
         self.addSubInterface(self.run_llamacpp_batch_bench_section, FIF.COMMAND_PROMPT, "batch-bench")
         self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
         self.addSubInterface(self.config_editor_section, FIF.EDIT, "配置编辑")
+        self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
         self.addSubInterface(self.about_section, FIF.INFO, "关于", position=NavigationItemPosition.BOTTOM)
 
@@ -1155,11 +1375,11 @@ class MainWindow(MSFluentWindow):
         self.log_section.log_display.append(message)
         self.log_section.log_display.ensureCursorVisible()
 
-    @Slot()
     def terminate_all_processes(self):
         for proc in processes:
             proc.terminate()
         processes.clear()
+
 
 if __name__ == "__main__":
     setTheme(Theme.DARK)

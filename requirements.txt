@@ -1,3 +1,5 @@
 PySide6==6.6.2
 PySide6-Fluent-Widgets[full]
 numpy==1.26.4
+aria2p
+psutil

@@ -1,8 +1,6 @@
 """
 #TODO: 
-1. SpinBox吸附256的倍数。
-2. batch-benchmark支持。
-3. 直接使用QProcess启动。
+1. 直接使用QProcess启动。
 """
 
 import sys
@@ -31,7 +29,7 @@ def get_resource_path(relative_path):
 CURRENT_DIR = get_self_path()
 CONFIG_FILE = 'sakura-launcher_config.json'
 ICON_FILE = 'icon.png'
-SAKURA_LAUNCHER_GUI_VERSION = '0.0.2'
+SAKURA_LAUNCHER_GUI_VERSION = '0.0.3'
 
 print(CURRENT_DIR)
 
@@ -346,7 +344,7 @@ class RunServerSection(RunSection):
 
 
 
-        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 1, 200, 1))
+        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
 
         layout.addWidget(QLabel("上下文长度 -c"))
         layout.addLayout(self._create_context_length_layout())
@@ -431,7 +429,7 @@ class RunBenchmarkSection(RunSection):
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
         layout.addWidget(self.config_preset_combo)
 
-        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 1, 200, 1))
+        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
 
         self.flash_attention_check = self._create_check_box("启用 Flash Attention -fa", True)
         layout.addWidget(self.flash_attention_check)
@@ -451,6 +449,159 @@ class RunBenchmarkSection(RunSection):
 
         self.setLayout(layout)
         
+class RunBatchBenchmarkSection(RunSection):
+    def __init__(self, title, main_window, parent=None):
+        super().__init__(title, main_window, parent)
+        self._init_ui()
+        self.load_presets()
+        self.refresh_models()
+        self.refresh_gpus()
+        self.load_selected_preset()
+
+    def _init_ui(self):
+        layout = QVBoxLayout()
+
+        buttons_group = QGroupBox("")
+        buttons_layout = QHBoxLayout()
+
+        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
+        self.save_preset_button.clicked.connect(self.save_preset)
+        self.save_preset_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.save_preset_button)
+
+        self.load_preset_button = PushButton(FIF.SYNC, '刷新预设', self)
+        self.load_preset_button.clicked.connect(self.load_presets)
+        self.load_preset_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.load_preset_button)
+
+        self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
+        self.run_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.run_button)
+
+        buttons_layout.setAlignment(Qt.AlignRight)
+        buttons_group.setStyleSheet(""" QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}""")
+        buttons_group.setLayout(buttons_layout)
+        layout.addWidget(buttons_group)
+
+        layout.addWidget(QLabel("模型选择"))
+        layout.addLayout(self._create_model_selection_layout())
+        layout.addWidget(QLabel("配置预设选择"))
+        self.config_preset_combo = EditableComboBox(self)
+        self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
+        layout.addWidget(self.config_preset_combo)
+
+        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
+        layout.addLayout(self._create_slider_spinbox_layout("最大上下文长度 -c", "ctx_size", 8192, 1, 65535, 512))
+
+        # 新增批量基准测试相关UI
+        layout.addWidget(QLabel("Prompt数量 -npp"))
+        self.npp_input = self._create_line_edit("Prompt数量，多个值用英文逗号分隔，如： 128,256,512", "128,256,512")
+        layout.addWidget(self.npp_input)
+
+        layout.addWidget(QLabel("生成文本（text generation）数量 -ntg"))
+        self.ntg_input = self._create_line_edit("生成文本（text generation）数量，多个值用英文逗号分隔，如： 128,256", "128,256")
+        layout.addWidget(self.ntg_input)
+
+        layout.addWidget(QLabel("并行Prompt数量 -npl"))
+        self.npl_input = self._create_line_edit("并行Prompt数量，多个值用英文逗号分隔，如： 1,2,4,8,16,32", "1,2,4,8,16,32")
+        layout.addWidget(self.npl_input)
+
+        self.pps_check = self._create_check_box("Prompt共享 -pps", False)
+        layout.addWidget(self.pps_check)
+
+        self.flash_attention_check = self._create_check_box("启用 Flash Attention -fa", True)
+        layout.addWidget(self.flash_attention_check)
+
+        self.no_mmap_check = self._create_check_box("启用 --no-mmap", True)
+        layout.addWidget(self.no_mmap_check)
+
+        layout.addLayout(self._create_gpu_selection_layout())
+
+        self.custom_command_append = TextEdit(self)
+        self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
+        layout.addWidget(self.custom_command_append)
+
+        self.custom_command = TextEdit(self)
+        self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
+        layout.addWidget(self.custom_command)
+
+        self.setLayout(layout)
+
+    def save_preset(self):
+        preset_name = self.config_preset_combo.currentText()
+        if not preset_name:
+            MessageBox("错误", "预设名称不能为空", self).exec()
+            return
+
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        if not os.path.exists(config_file_path):
+            with open(config_file_path, 'w', encoding='utf-8') as f:
+                json.dump({}, f, ensure_ascii=False, indent=4)
+        
+        with open(config_file_path, 'r', encoding='utf-8') as f:
+            try:
+                current_settings = json.load(f)
+            except json.JSONDecodeError:
+                current_settings = {}
+
+        preset_section = current_settings.get(self.title, [])
+        new_preset = {
+            'name': preset_name,
+            'config': {
+                'custom_command': self.custom_command.toPlainText(),
+                'custom_command_append': self.custom_command_append.toPlainText(),
+                'gpu_layers': self.gpu_layers_spinbox.value(),
+                'ctx_size': self.ctx_size_spinbox.value(),
+                'flash_attention': self.flash_attention_check.isChecked(),
+                'no_mmap': self.no_mmap_check.isChecked(),
+                'gpu_enabled': self.gpu_enabled_check.isChecked(),
+                'gpu': self.gpu_combo.currentText(),
+                'model_path': self.model_path.currentText(),
+                'npp': self.npp_input.text(),
+                'ntg': self.ntg_input.text(),
+                'npl': self.npl_input.text(),
+                'pps': self.pps_check.isChecked(),
+            }
+        }
+
+        for i, preset in enumerate(preset_section):
+            if preset['name'] == preset_name:
+                preset_section[i] = new_preset
+                break
+        else:
+            preset_section.append(new_preset)
+
+        current_settings[self.title] = preset_section
+
+        with open(config_file_path, 'w', encoding='utf-8') as f:
+            json.dump(current_settings, f, ensure_ascii=False, indent=4)
+
+        self.load_presets()
+        self.main_window.createSuccessInfoBar("成功", "预设已保存")
+
+    def load_selected_preset(self):
+        preset_name = self.config_preset_combo.currentText()
+        presets = self.load_presets_from_file()
+        if not presets or presets == {}:
+            return
+        if self.title in presets:
+            for preset in presets[self.title]:
+                if preset['name'] == preset_name:
+                    config = preset['config']
+                    self.custom_command.setPlainText(config.get('custom_command', ''))
+                    self.custom_command_append.setPlainText(config.get('custom_command_append', ''))
+                    self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 99))
+                    self.ctx_size_spinbox.setValue(config.get('ctx_size', 8192))
+                    self.model_path.setCurrentText(config.get('model_path', ''))
+                    self.npp_input.setText(config.get('npp', ''))
+                    self.ntg_input.setText(config.get('ntg', ''))
+                    self.npl_input.setText(config.get('npl', ''))
+                    self.pps_check.setChecked(config.get('pps', False))
+                    self.flash_attention_check.setChecked(config.get('flash_attention', True))
+                    self.no_mmap_check.setChecked(config.get('no_mmap', True))
+                    self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
+                    self.gpu_combo.setCurrentText(config.get('gpu', ''))
+                    break
 
 class LogSection(QFrame):
     def __init__(self, title, parent=None):
@@ -835,6 +986,7 @@ class MainWindow(MSFluentWindow):
         self.settings_section = SettingsSection("设置", self)
         self.run_server_section = RunServerSection("运行server", self)
         self.run_bench_section = RunBenchmarkSection("运行bench", self)
+        self.run_llamacpp_batch_bench_section = RunBatchBenchmarkSection("批量运行bench", self)
         self.log_section = LogSection("日志输出")
         self.about_section = AboutSection("关于")
         self.config_editor_section = ConfigEditor("配置编辑", self)
@@ -842,6 +994,7 @@ class MainWindow(MSFluentWindow):
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
         self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
+        self.addSubInterface(self.run_llamacpp_batch_bench_section, FIF.COMMAND_PROMPT, "batch-bench")
         self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
         self.addSubInterface(self.config_editor_section, FIF.EDIT, "配置编辑")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
@@ -852,10 +1005,13 @@ class MainWindow(MSFluentWindow):
     def init_window(self):
         self.run_server_section.run_button.clicked.connect(self.run_llamacpp_server)
         self.run_bench_section.run_button.clicked.connect(self.run_llamacpp_bench)
+        self.run_llamacpp_batch_bench_section.run_button.clicked.connect(self.run_llamacpp_batch_bench)
         self.run_server_section.load_preset_button.clicked.connect(self.run_server_section.load_presets)
         self.run_bench_section.load_preset_button.clicked.connect(self.run_bench_section.load_presets)
+        self.run_llamacpp_batch_bench_section.load_preset_button.clicked.connect(self.run_llamacpp_batch_bench_section.load_presets)
         self.run_server_section.refresh_model_button.clicked.connect(self.run_server_section.refresh_models)
         self.run_bench_section.refresh_model_button.clicked.connect(self.run_bench_section.refresh_models)
+        self.run_llamacpp_batch_bench_section.refresh_model_button.clicked.connect(self.run_llamacpp_batch_bench_section.refresh_models)
         
         self.setStyleSheet("""
             QLabel {
@@ -909,6 +1065,9 @@ class MainWindow(MSFluentWindow):
     def run_llamacpp_bench(self):
         self._run_llamacpp(self.run_bench_section, 'llama-bench')
 
+    def run_llamacpp_batch_bench(self):
+        self._run_llamacpp(self.run_llamacpp_batch_bench_section, 'llama-batched-bench')
+
     def _run_llamacpp(self, section, old_executable, new_executable=None):
         custom_command = section.custom_command.toPlainText().strip()
         llamacpp_path = self.get_llamacpp_path()
@@ -960,6 +1119,20 @@ class MainWindow(MSFluentWindow):
                     command += ' -fa 1,0'
                 if section.no_mmap_check.isChecked():
                     command += ' -mmp 0'
+                if section.custom_command_append.toPlainText().strip():
+                    command += f' {section.custom_command_append.toPlainText().strip()}'
+            elif old_executable == 'llama-batched-bench':
+                command += f' -c {section.ctx_size_spinbox.value()}'
+                command += f' -ngl {section.gpu_layers_spinbox.value()}'
+                command += f' -npp {section.npp_input.text()}'
+                command += f' -ntg {section.ntg_input.text()}'
+                command += f' -npl {section.npl_input.text()}'
+                if section.pps_check.isChecked():
+                    command += ' -pps'
+                if section.flash_attention_check.isChecked():
+                    command += ' -fa'
+                if section.no_mmap_check.isChecked():
+                    command += ' --no-mmap'
                 if section.custom_command_append.toPlainText().strip():
                     command += f' {section.custom_command_append.toPlainText().strip()}'
 

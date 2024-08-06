@@ -5,6 +5,7 @@
 
 import sys
 import os
+import wmi
 import json
 import subprocess
 import atexit
@@ -89,7 +90,7 @@ class RunSection(QFrame):
 
     def _create_gpu_selection_layout(self):
         layout = QHBoxLayout()
-        self.gpu_enabled_check = self._create_check_box("单GPU启动（仅支持NVIDIA显卡）", True)
+        self.gpu_enabled_check = self._create_check_box("单GPU启动", True)
         self.gpu_enabled_check.stateChanged.connect(self.toggle_gpu_selection)
         self.gpu_combo = ComboBox(self)
         layout.addWidget(self.gpu_enabled_check)
@@ -162,13 +163,35 @@ class RunSection(QFrame):
 
     def refresh_gpus(self):
         self.gpu_combo.clear()
+        self.nvidia_gpus = []
+        self.amd_gpus = []
+        
         try:
+            # 检测NVIDIA GPU
             os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
             result = subprocess.run('nvidia-smi --query-gpu=name --format=csv,noheader', shell=True, capture_output=True, text=True)
-            gpus = result.stdout.strip().split('\n')
-            self.gpu_combo.addItems(gpus)
+            if result.returncode == 0:
+                self.nvidia_gpus = result.stdout.strip().split('\n')
+            
+            # 检测AMD GPU
+            c = wmi.WMI()
+            for gpu in c.Win32_VideoController():
+                if 'AMD' in gpu.Name or 'ATI' in gpu.Name:
+                    self.amd_gpus.append(gpu.Name)
+            
+            # 优先添加NVIDIA GPU
+            if self.nvidia_gpus:
+                self.gpu_combo.addItems(self.nvidia_gpus)
+            
+            # 如果有AMD GPU，添加到列表末尾
+            if self.amd_gpus:
+                self.gpu_combo.addItems(self.amd_gpus)
+            
+            if not self.nvidia_gpus and not self.amd_gpus:
+                print("未检测到NVIDIA或AMD GPU")
+            
         except Exception as e:
-            print(f"未检测到GPU，可能是因为你使用的是AMD显卡或者核显: {str(e)}")
+            print(f"获取GPU信息时出错: {str(e)}")
 
     def save_preset(self):
         preset_name = self.config_preset_combo.currentText()
@@ -1356,9 +1379,35 @@ class MainWindow(MSFluentWindow):
                 if section.custom_command_append.toPlainText().strip():
                     command += f' {section.custom_command_append.toPlainText().strip()}'
 
+        # 如果启用单GPU选项被选中
         if section.gpu_enabled_check.isChecked():
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(section.gpu_combo.currentIndex())
-            self.log_info(f"CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
+            selected_gpu = section.gpu_combo.currentText()  # 获取当前选中的GPU名称
+            selected_index = section.gpu_combo.currentIndex()  # 获取当前选中的GPU索引
+            
+            # 检查是否存在NVIDIA GPU
+            if section.nvidia_gpus:
+                # 如果选中的是NVIDIA GPU (索引小于NVIDIA GPU总数)
+                if selected_index < len(section.nvidia_gpus):
+                    # 设置CUDA_VISIBLE_DEVICES环境变量,使CUDA只能看到选中的GPU
+                    os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_index)
+                    self.log_info(f"CUDA_VISIBLE_DEVICES: {selected_index}")
+                else:
+                    # 如果选中的是AMD GPU,计算AMD GPU的索引
+                    amd_index = selected_index - len(section.nvidia_gpus)
+                    # 设置HIP_VISIBLE_DEVICES环境变量,使ROCm只能看到选中的GPU
+                    os.environ["HIP_VISIBLE_DEVICES"] = str(amd_index)
+                    self.log_info(f"HIP_VISIBLE_DEVICES: {amd_index}")
+            else:
+                # 如果没有NVIDIA GPU,假定全部是AMD GPU
+                os.environ["HIP_VISIBLE_DEVICES"] = str(selected_index)
+                self.log_info(f"HIP_VISIBLE_DEVICES: {selected_index}")
+
+            # 检查选中的GPU是否为AMD GPU
+            if 'AMD' in selected_gpu or 'ATI' in selected_gpu:
+                # 设置HSA_OVERRIDE_GFX_VERSION环境变量,以确保兼容性
+                os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
+                self.log_info("设置 HSA_OVERRIDE_GFX_VERSION = 10.3.0")
+
 
         self.log_info(f"执行命令: {command}")
 

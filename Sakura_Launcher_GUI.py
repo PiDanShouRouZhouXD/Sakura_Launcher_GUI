@@ -1,25 +1,19 @@
-"""
-#TODO: 
-1. 直接使用QProcess启动。
-"""
-
 import sys
 import os
 import wmi
 import json
 import subprocess
 import atexit
+import logging
+import requests
+from enum import Enum
 from functools import partial
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QThread
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QStackedWidget
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QStackedWidget, QDialog, QDialogButtonBox, QComboBox, QLineEdit
 from PySide6.QtGui import QIcon, QColor
 from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget, InfoBar, InfoBarPosition, ProgressBar
 
-
-import logging
-import subprocess
-import requests
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def get_self_path():
@@ -37,10 +31,73 @@ def get_resource_path(relative_path):
 CURRENT_DIR = get_self_path()
 CONFIG_FILE = 'sakura-launcher_config.json'
 ICON_FILE = 'icon.png'
-SAKURA_LAUNCHER_GUI_VERSION = '0.0.3'
-
+SAKURA_LAUNCHER_GUI_VERSION = '0.0.4'
 
 processes = []
+
+class GPUType(Enum):
+    NVIDIA = 1
+    AMD = 2
+    UNKNOWN = 3
+
+class GPUManager:
+    def __init__(self):
+        self.nvidia_gpus = []
+        self.amd_gpus = []
+        self.detect_gpus()
+
+    def detect_gpus(self):
+        # 检测NVIDIA GPU
+        try:
+            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            result = subprocess.run('nvidia-smi --query-gpu=name --format=csv,noheader', shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                self.nvidia_gpus = result.stdout.strip().split('\n')
+        except Exception as e:
+            logging.error(f"检测NVIDIA GPU时出错: {str(e)}")
+
+        # 检测AMD GPU
+        try:
+            c = wmi.WMI()
+            amd_gpus_temp = []
+            for gpu in c.Win32_VideoController():
+                if 'AMD' in gpu.Name or 'ATI' in gpu.Name:
+                    amd_gpus_temp.append(gpu.Name)
+            logging.info(f"检测到AMD GPU(正向列表): {amd_gpus_temp}")
+            # 反向添加AMD GPU
+            self.amd_gpus = list(reversed(amd_gpus_temp))
+            logging.info(f"检测到AMD GPU(反向列表): {self.amd_gpus}")
+        except Exception as e:
+            logging.error(f"检测AMD GPU时出错: {str(e)}")
+
+    def get_gpu_type(self, gpu_name):
+        if 'NVIDIA' in gpu_name.upper():
+            return GPUType.NVIDIA
+        elif 'AMD' in gpu_name.upper() or 'ATI' in gpu_name.upper():
+            return GPUType.AMD
+        else:
+            return GPUType.UNKNOWN
+
+    def set_gpu_env(self, selected_gpu, selected_index, manual_index=None):
+        gpu_type = self.get_gpu_type(selected_gpu)
+        if manual_index == '':
+            manual_index = None
+        if gpu_type == GPUType.NVIDIA:
+            if manual_index is not None:
+                os.environ["CUDA_VISIBLE_DEVICES"] = str(manual_index)
+                logging.info(f"设置 CUDA_VISIBLE_DEVICES = {manual_index}")
+            else:
+                os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_index)
+                logging.info(f"设置 CUDA_VISIBLE_DEVICES = {selected_index}")
+        elif gpu_type == GPUType.AMD:
+            if manual_index is not None:
+                os.environ["HIP_VISIBLE_DEVICES"] = str(manual_index - len(self.nvidia_gpus))
+                logging.info(f"设置 HIP_VISIBLE_DEVICES = {manual_index - len(self.nvidia_gpus)}")
+            else:
+                os.environ["HIP_VISIBLE_DEVICES"] = str(selected_index - len(self.nvidia_gpus))
+                logging.info(f"设置 HIP_VISIBLE_DEVICES = {selected_index - len(self.nvidia_gpus)}")
+        else:
+            logging.warning(f"未知的GPU类型: {selected_gpu}")
 
 class LlamaCPPWorker(QObject):
     progress = Signal(str)
@@ -76,7 +133,6 @@ class LlamaCPPWorker(QObject):
             proc.terminate()
         processes.clear()
 
-
 class RunSection(QFrame):
     def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
@@ -93,8 +149,12 @@ class RunSection(QFrame):
         self.gpu_enabled_check = self._create_check_box("单GPU启动", True)
         self.gpu_enabled_check.stateChanged.connect(self.toggle_gpu_selection)
         self.gpu_combo = ComboBox(self)
+        self.manully_select_gpu_index = LineEdit(self)
+        self.manully_select_gpu_index.setPlaceholderText("手动指定GPU索引")
+        self.manully_select_gpu_index.setFixedWidth(140)
         layout.addWidget(self.gpu_enabled_check)
         layout.addWidget(self.gpu_combo)
+        layout.addWidget(self.manully_select_gpu_index)
         return layout
 
     def _create_line_edit(self, placeholder, text):
@@ -155,43 +215,156 @@ class RunSection(QFrame):
         self.model_path.clear()
         models = []
         search_paths = [CURRENT_DIR] + self.main_window.get_model_search_paths()
+        logging.debug(f"搜索路径: {search_paths}")
         for path in search_paths:
-            if os.path.exists(path) and os.path.isdir(path):
-                for root, _, files in os.walk(path):
-                    models.extend([os.path.join(root, f) for f in files if f.endswith('.gguf')])
+            logging.debug(f"正在搜索路径: {path}")
+            if os.path.exists(path):
+                logging.debug(f"路径存在: {path}")
+                if os.path.isdir(path):
+                    logging.debug(f"路径是目录: {path}")
+                    for root, dirs, files in os.walk(path):
+                        logging.debug(f"正在搜索子目录: {root}")
+                        logging.debug(f"文件列表: {files}")
+                        for f in files:
+                            if f.endswith('.gguf'):
+                                full_path = os.path.join(root, f)
+                                logging.debug(f"找到模型文件: {full_path}")
+                                models.append(full_path)
+                else:
+                    logging.debug(f"路径不是目录: {path}")
+            else:
+                logging.debug(f"路径不存在: {path}")
+        
+        logging.debug(f"找到的模型文件: {models}")
         self.model_path.addItems(models)
 
     def refresh_gpus(self):
         self.gpu_combo.clear()
-        self.nvidia_gpus = []
-        self.amd_gpus = []
+        self.nvidia_gpus = self.main_window.gpu_manager.nvidia_gpus
+        self.amd_gpus = self.main_window.gpu_manager.amd_gpus
         
-        try:
-            # 检测NVIDIA GPU
-            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-            result = subprocess.run('nvidia-smi --query-gpu=name --format=csv,noheader', shell=True, capture_output=True, text=True)
-            if result.returncode == 0:
-                self.nvidia_gpus = result.stdout.strip().split('\n')
-            
-            # 检测AMD GPU
-            c = wmi.WMI()
-            for gpu in c.Win32_VideoController():
-                if 'AMD' in gpu.Name or 'ATI' in gpu.Name:
-                    self.amd_gpus.append(gpu.Name)
-            
-            # 优先添加NVIDIA GPU
-            if self.nvidia_gpus:
-                self.gpu_combo.addItems(self.nvidia_gpus)
-            
-            # 如果有AMD GPU，添加到列表末尾
-            if self.amd_gpus:
-                self.gpu_combo.addItems(self.amd_gpus)
-            
-            if not self.nvidia_gpus and not self.amd_gpus:
-                print("未检测到NVIDIA或AMD GPU")
-            
-        except Exception as e:
-            print(f"获取GPU信息时出错: {str(e)}")
+        # 优先添加NVIDIA GPU
+        if self.nvidia_gpus:
+            self.gpu_combo.addItems(self.nvidia_gpus)
+        
+        # 如果有AMD GPU，添加到列表末尾
+        if self.amd_gpus:
+            self.gpu_combo.addItems(self.amd_gpus)
+        
+        if not self.nvidia_gpus and not self.amd_gpus:
+            logging.warning("未检测到NVIDIA或AMD GPU")
+
+    def toggle_gpu_selection(self):
+        self.gpu_combo.setEnabled(self.gpu_enabled_check.isChecked())
+
+class RunServerSection(RunSection):
+    def __init__(self, title, main_window, parent=None):
+        super().__init__(title, main_window, parent)
+        self._init_ui()
+        self.load_presets()
+        self.refresh_models()
+        self.refresh_gpus()
+        self.load_selected_preset()
+
+    def _init_ui(self):
+        layout = QVBoxLayout()
+
+        buttons_group = QGroupBox("")
+        buttons_layout = QHBoxLayout()
+
+        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
+        self.save_preset_button.clicked.connect(self.save_preset)
+        self.save_preset_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.save_preset_button)
+
+        self.load_preset_button = PushButton(FIF.SYNC, '刷新预设', self)
+        self.load_preset_button.clicked.connect(self.load_presets)
+        self.load_preset_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.load_preset_button)
+
+        self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
+        self.run_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.run_button)
+
+        # 按钮布局右对齐
+        buttons_layout.setAlignment(Qt.AlignRight)
+        buttons_group.setStyleSheet(""" QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}""")
+
+        buttons_group.setLayout(buttons_layout)
+        layout.addWidget(buttons_group)
+
+        layout.addWidget(QLabel("模型选择"))
+        layout.addLayout(self._create_model_selection_layout())
+        layout.addWidget(QLabel("配置预设选择"))
+        self.config_preset_combo = EditableComboBox(self)
+        self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
+        layout.addWidget(self.config_preset_combo)
+
+        ip_port_log_layout = QHBoxLayout()
+
+        ip_layout = QVBoxLayout()
+        self.host_input = self._create_editable_combo_box(["127.0.0.1", "0.0.0.0"])
+        ip_layout.addWidget(QLabel("主机地址 --host"))
+        ip_layout.addWidget(self.host_input)
+
+        host_layout = QVBoxLayout()
+        self.port_input = self._create_line_edit("", "8080")
+        host_layout.addWidget(QLabel("端口 --port"))
+        host_layout.addWidget(self.port_input)
+
+        log_layout = QVBoxLayout()
+        self.log_format_combo = self._create_editable_combo_box(["text", "json"])
+        log_layout.addWidget(QLabel("日志格式 --log-format"))
+        log_layout.addWidget(self.log_format_combo)
+
+        ip_port_log_layout.addLayout(ip_layout)
+        ip_port_log_layout.addLayout(host_layout)
+        ip_port_log_layout.addLayout(log_layout)
+
+        layout.addLayout(ip_port_log_layout)
+
+        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
+
+        layout.addWidget(QLabel("上下文长度 -c"))
+        layout.addLayout(self._create_context_length_layout())
+
+        layout.addLayout(self._create_slider_spinbox_layout("并行工作线程数 -np", "n_parallel", 1, 1, 32, 1))
+
+        self.flash_attention_check = self._create_check_box("启用 Flash Attention -fa", True)
+        layout.addWidget(self.flash_attention_check)
+
+        self.no_mmap_check = self._create_check_box("启用 --no-mmap", True)
+        layout.addWidget(self.no_mmap_check)
+
+        layout.addLayout(self._create_gpu_selection_layout())
+
+        self.custom_command_append = TextEdit(self)
+        self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
+        layout.addWidget(self.custom_command_append)
+
+        self.custom_command = TextEdit(self)
+        self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
+        layout.addWidget(self.custom_command)
+
+        self.setLayout(layout)
+
+    def _create_context_length_layout(self):
+        layout = QHBoxLayout()
+        self.context_length = Slider(Qt.Horizontal, self)
+        self.context_length.setRange(256, 32768)
+        self.context_length.setPageStep(256)
+        self.context_length.setValue(2048)
+        self.context_length.valueChanged.connect(lambda value: self.context_length_input.setValue(value))
+
+        self.context_length_input = SpinBox(self)
+        self.context_length_input.setRange(256, 32768)
+        self.context_length_input.setSingleStep(256)
+        self.context_length_input.setValue(2048)
+        self.context_length_input.valueChanged.connect(lambda value: self.context_length.setValue(value))
+
+        layout.addWidget(self.context_length)
+        layout.addWidget(self.context_length_input)
+        return layout
 
     def save_preset(self):
         preset_name = self.config_preset_combo.currentText()
@@ -299,123 +472,6 @@ class RunSection(QFrame):
                 except json.JSONDecodeError:
                     return {}
         return {}
-    def toggle_gpu_selection(self):
-        self.gpu_combo.setEnabled(self.gpu_enabled_check.isChecked())
-
-class RunServerSection(RunSection):
-    def __init__(self, title, main_window, parent=None):
-        super().__init__(title, main_window, parent)
-        self._init_ui()
-        self.load_presets()
-        self.refresh_models()
-        self.refresh_gpus()
-        self.load_selected_preset()
-
-    def _init_ui(self):
-        layout = QVBoxLayout()
-
-        buttons_group = QGroupBox("")
-        buttons_layout = QHBoxLayout()
-
-
-        self.save_preset_button = PushButton(FIF.SAVE, '保存预设', self)
-        self.save_preset_button.clicked.connect(self.save_preset)
-        self.save_preset_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.save_preset_button)
-
-        self.load_preset_button = PushButton(FIF.SYNC, '刷新预设', self)
-        self.load_preset_button.clicked.connect(self.load_presets)
-        self.load_preset_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.load_preset_button)
-
-        self.run_button = PrimaryPushButton(FIF.PLAY, '运行', self)
-        self.run_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.run_button)
-
-        # 按钮布局右对齐
-        buttons_layout.setAlignment(Qt.AlignRight)
-        buttons_group.setStyleSheet(""" QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}""")
-
-        buttons_group.setLayout(buttons_layout)
-        layout.addWidget(buttons_group)
-
-        
-        layout.addWidget(QLabel("模型选择"))
-        layout.addLayout(self._create_model_selection_layout())
-        layout.addWidget(QLabel("配置预设选择"))
-        self.config_preset_combo = EditableComboBox(self)
-        self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
-        layout.addWidget(self.config_preset_combo)
-
-        ip_port_log_layout = QHBoxLayout()
-
-        ip_layout = QVBoxLayout()
-        self.host_input = self._create_editable_combo_box(["127.0.0.1", "0.0.0.0"])
-        ip_layout.addWidget(QLabel("主机地址 --host"))
-        ip_layout.addWidget(self.host_input)
-
-        host_layout = QVBoxLayout()
-        self.port_input = self._create_line_edit("", "8080")
-        host_layout.addWidget(QLabel("端口 --port"))
-        host_layout.addWidget(self.port_input)
-
-        log_layout = QVBoxLayout()
-        self.log_format_combo = self._create_editable_combo_box(["text", "json"])
-        log_layout.addWidget(QLabel("日志格式 --log-format"))
-        log_layout.addWidget(self.log_format_combo)
-
-
-        ip_port_log_layout.addLayout(ip_layout)
-        ip_port_log_layout.addLayout(host_layout)
-        ip_port_log_layout.addLayout(log_layout)
-
-        layout.addLayout(ip_port_log_layout)
-
-
-
-        layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
-
-        layout.addWidget(QLabel("上下文长度 -c"))
-        layout.addLayout(self._create_context_length_layout())
-
-        layout.addLayout(self._create_slider_spinbox_layout("并行工作线程数 -np", "n_parallel", 1, 1, 32, 1))
-
-
-        self.flash_attention_check = self._create_check_box("启用 Flash Attention -fa", True)
-        layout.addWidget(self.flash_attention_check)
-
-        self.no_mmap_check = self._create_check_box("启用 --no-mmap", True)
-        layout.addWidget(self.no_mmap_check)
-
-        layout.addLayout(self._create_gpu_selection_layout())
-
-        self.custom_command_append = TextEdit(self)
-        self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
-        layout.addWidget(self.custom_command_append)
-
-        self.custom_command = TextEdit(self)
-        self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
-        layout.addWidget(self.custom_command)
-
-        self.setLayout(layout)
-
-    def _create_context_length_layout(self):
-        layout = QHBoxLayout()
-        self.context_length = Slider(Qt.Horizontal, self)
-        self.context_length.setRange(256, 32768)
-        self.context_length.setPageStep(256)
-        self.context_length.setValue(2048)
-        self.context_length.valueChanged.connect(lambda value: self.context_length_input.setValue(value))
-
-        self.context_length_input = SpinBox(self)
-        self.context_length_input.setRange(256, 32768)
-        self.context_length_input.setSingleStep(256)
-        self.context_length_input.setValue(2048)
-        self.context_length_input.valueChanged.connect(lambda value: self.context_length.setValue(value))
-
-        layout.addWidget(self.context_length)
-        layout.addWidget(self.context_length_input)
-        return layout
 
 class RunBenchmarkSection(RunSection):
     def __init__(self, title, main_window, parent=None):
@@ -477,6 +533,90 @@ class RunBenchmarkSection(RunSection):
         layout.addWidget(self.custom_command)
 
         self.setLayout(layout)
+
+    def save_preset(self):
+        preset_name = self.config_preset_combo.currentText()
+        if not preset_name:
+            MessageBox("错误", "预设名称不能为空", self).exec()
+            return
+
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        if not os.path.exists(config_file_path):
+            with open(config_file_path, 'w', encoding='utf-8') as f:
+                json.dump({}, f, ensure_ascii=False, indent=4)
+        
+        with open(config_file_path, 'r', encoding='utf-8') as f:
+            try:
+                current_settings = json.load(f)
+            except json.JSONDecodeError:
+                current_settings = {}
+
+        preset_section = current_settings.get(self.title, [])
+        new_preset = {
+            'name': preset_name,
+            'config': {
+                'custom_command': self.custom_command.toPlainText(),
+                'custom_command_append': self.custom_command_append.toPlainText(),
+                'gpu_layers': self.gpu_layers_spinbox.value(),
+                'flash_attention': self.flash_attention_check.isChecked(),
+                'no_mmap': self.no_mmap_check.isChecked(),
+                'gpu_enabled': self.gpu_enabled_check.isChecked(),
+                'gpu': self.gpu_combo.currentText(),
+                'model_path': self.model_path.currentText()
+            }
+        }
+
+        for i, preset in enumerate(preset_section):
+            if preset['name'] == preset_name:
+                preset_section[i] = new_preset
+                break
+        else:
+            preset_section.append(new_preset)
+
+        current_settings[self.title] = preset_section
+
+        with open(config_file_path, 'w', encoding='utf-8') as f:
+            json.dump(current_settings, f, ensure_ascii=False, indent=4)
+
+        self.load_presets()
+        self.main_window.createSuccessInfoBar("成功", "预设已保存")
+
+    def load_presets(self):
+        self.config_preset_combo.clear()
+        presets = self.load_presets_from_file()
+        if not presets or presets == {}:
+            return
+        if self.title in presets:
+            self.config_preset_combo.addItems([preset['name'] for preset in presets[self.title]])
+
+    def load_selected_preset(self):
+        preset_name = self.config_preset_combo.currentText()
+        presets = self.load_presets_from_file()
+        if not presets or presets == {}:
+            return
+        if self.title in presets:
+            for preset in presets[self.title]:
+                if preset['name'] == preset_name:
+                    config = preset['config']
+                    self.custom_command.setPlainText(config.get('custom_command', ''))
+                    self.custom_command_append.setPlainText(config.get('custom_command_append', ''))
+                    self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 99))
+                    self.model_path.setCurrentText(config.get('model_path', ''))
+                    self.flash_attention_check.setChecked(config.get('flash_attention', True))
+                    self.no_mmap_check.setChecked(config.get('no_mmap', True))
+                    self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
+                    self.gpu_combo.setCurrentText(config.get('gpu', ''))
+                    break
+
+    def load_presets_from_file(self):
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        if os.path.exists(config_file_path):
+            with open(config_file_path, 'r', encoding='utf-8') as f:
+                try:
+                    return json.load(f) or {}
+                except json.JSONDecodeError:
+                    return {}
+        return {}
         
 class RunBatchBenchmarkSection(RunSection):
     def __init__(self, title, main_window, parent=None):
@@ -608,6 +748,14 @@ class RunBatchBenchmarkSection(RunSection):
         self.load_presets()
         self.main_window.createSuccessInfoBar("成功", "预设已保存")
 
+    def load_presets(self):
+        self.config_preset_combo.clear()
+        presets = self.load_presets_from_file()
+        if not presets or presets == {}:
+            return
+        if self.title in presets:
+            self.config_preset_combo.addItems([preset['name'] for preset in presets[self.title]])
+
     def load_selected_preset(self):
         preset_name = self.config_preset_combo.currentText()
         presets = self.load_presets_from_file()
@@ -631,6 +779,16 @@ class RunBatchBenchmarkSection(RunSection):
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
                     self.gpu_combo.setCurrentText(config.get('gpu', ''))
                     break
+
+    def load_presets_from_file(self):
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        if os.path.exists(config_file_path):
+            with open(config_file_path, 'r', encoding='utf-8') as f:
+                try:
+                    return json.load(f) or {}
+                except json.JSONDecodeError:
+                    return {}
+        return {}
 
 class LogSection(QFrame):
     def __init__(self, title, parent=None):
@@ -851,8 +1009,6 @@ AMD显卡支持列表：
             # 解压所有文件到llama文件夹，覆盖已存在的文件
             zip_ref.extractall(llama_folder)
 
-
-        
     # 直接使用requests下载
     def start_download(self, url, filename):
         self.download_thread = DownloadThread(url, filename)
@@ -871,7 +1027,6 @@ AMD显卡支持列表：
                 os.remove(os.path.join(CURRENT_DIR, file))
                 break
             
-
     def on_download_error(self, error_message):
         logger.error(f"Download error: {error_message}")
         QApplication.processEvents()  # 确保UI更新
@@ -941,7 +1096,6 @@ class SettingsSection(QFrame):
             return
         self.llamacpp_path.setText(settings.get('llamacpp_path', ''))
         self.model_search_paths.setPlainText('\n'.join(settings.get('model_search_paths', [])))
-
 
 class AboutSection(QFrame):
     def __init__(self, text: str, parent=None):
@@ -1215,10 +1369,10 @@ class ConfigEditor(QFrame):
         if index.isValid():
             table.removeRow(index.row())
 
-
 class MainWindow(MSFluentWindow):
     def __init__(self):
         super().__init__()
+        self.gpu_manager = GPUManager()
         self.init_navigation()
         self.init_window()
         atexit.register(self.terminate_all_processes)
@@ -1232,7 +1386,6 @@ class MainWindow(MSFluentWindow):
         self.about_section = AboutSection("关于")
         self.config_editor_section = ConfigEditor("配置编辑", self)
         self.dowload_section = DownloadSection("下载", self)
-
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
         self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
@@ -1297,7 +1450,8 @@ class MainWindow(MSFluentWindow):
         return os.path.abspath(path)
 
     def get_model_search_paths(self):
-        return self.settings_section.model_search_paths.toPlainText().split('\n')
+        paths = self.settings_section.model_search_paths.toPlainText().split('\n')
+        return [path.strip() for path in paths if path.strip()]
 
     def _add_quotes(self, path):
         return f'"{path}"'
@@ -1379,35 +1533,17 @@ class MainWindow(MSFluentWindow):
                 if section.custom_command_append.toPlainText().strip():
                     command += f' {section.custom_command_append.toPlainText().strip()}'
 
-        # 如果启用单GPU选项被选中
         if section.gpu_enabled_check.isChecked():
-            selected_gpu = section.gpu_combo.currentText()  # 获取当前选中的GPU名称
-            selected_index = section.gpu_combo.currentIndex()  # 获取当前选中的GPU索引
+            selected_gpu = section.gpu_combo.currentText()
+            selected_index = section.gpu_combo.currentIndex()
+            manual_index = section.manully_select_gpu_index.text()
             
-            # 检查是否存在NVIDIA GPU
-            if section.nvidia_gpus:
-                # 如果选中的是NVIDIA GPU (索引小于NVIDIA GPU总数)
-                if selected_index < len(section.nvidia_gpus):
-                    # 设置CUDA_VISIBLE_DEVICES环境变量,使CUDA只能看到选中的GPU
-                    os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_index)
-                    self.log_info(f"CUDA_VISIBLE_DEVICES: {selected_index}")
-                else:
-                    # 如果选中的是AMD GPU,计算AMD GPU的索引
-                    amd_index = selected_index - len(section.nvidia_gpus)
-                    # 设置HIP_VISIBLE_DEVICES环境变量,使ROCm只能看到选中的GPU
-                    os.environ["HIP_VISIBLE_DEVICES"] = str(amd_index)
-                    self.log_info(f"HIP_VISIBLE_DEVICES: {amd_index}")
-            else:
-                # 如果没有NVIDIA GPU,假定全部是AMD GPU
-                os.environ["HIP_VISIBLE_DEVICES"] = str(selected_index)
-                self.log_info(f"HIP_VISIBLE_DEVICES: {selected_index}")
-
-            # 检查选中的GPU是否为AMD GPU
-            if 'AMD' in selected_gpu or 'ATI' in selected_gpu:
-                # 设置HSA_OVERRIDE_GFX_VERSION环境变量,以确保兼容性
-                os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
-                self.log_info("设置 HSA_OVERRIDE_GFX_VERSION = 10.3.0")
-
+            try:
+                self.gpu_manager.set_gpu_env(selected_gpu, selected_index, manual_index)
+            except Exception as e:
+                self.log_info(f"设置GPU环境变量时出错: {str(e)}")
+                MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
+                return
 
         self.log_info(f"执行命令: {command}")
 
@@ -1429,6 +1565,14 @@ class MainWindow(MSFluentWindow):
             proc.terminate()
         processes.clear()
 
+    def refresh_gpus(self):
+        self.gpu_manager.detect_gpus()
+        self.run_server_section.refresh_gpus()
+        self.run_bench_section.refresh_gpus()
+        self.run_llamacpp_batch_bench_section.refresh_gpus()
+
+        if not self.gpu_manager.nvidia_gpus and not self.gpu_manager.amd_gpus:
+            self.log_info("未检测到NVIDIA或AMD GPU")
 
 if __name__ == "__main__":
     setTheme(Theme.DARK)
@@ -1437,4 +1581,3 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
-        

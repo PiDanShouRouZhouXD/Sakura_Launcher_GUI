@@ -6,6 +6,7 @@ import subprocess
 import atexit
 import logging
 import requests
+import math
 from enum import Enum
 from functools import partial
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QThread
@@ -153,8 +154,8 @@ class RunSection(QFrame):
         self.manully_select_gpu_index.setPlaceholderText("手动指定GPU索引")
         self.manully_select_gpu_index.setFixedWidth(140)
         layout.addWidget(self.gpu_enabled_check)
-        layout.addWidget(self.gpu_combo)
         layout.addWidget(self.manully_select_gpu_index)
+        layout.addWidget(self.gpu_combo)
         return layout
 
     def _create_line_edit(self, placeholder, text):
@@ -286,7 +287,6 @@ class RunServerSection(RunSection):
         self.run_button.setFixedSize(110, 30)
         buttons_layout.addWidget(self.run_button)
 
-        # 按钮布局右对齐
         buttons_layout.setAlignment(Qt.AlignRight)
         buttons_group.setStyleSheet(""" QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}""")
 
@@ -330,6 +330,10 @@ class RunServerSection(RunSection):
 
         layout.addLayout(self._create_slider_spinbox_layout("并行工作线程数 -np", "n_parallel", 1, 1, 32, 1))
 
+        # 新增：每个线程的context数量标签
+        self.context_per_thread_label = QLabel(self)
+        layout.addWidget(self.context_per_thread_label)
+
         self.flash_attention_check = self._create_check_box("启用 Flash Attention -fa", True)
         layout.addWidget(self.flash_attention_check)
 
@@ -348,23 +352,80 @@ class RunServerSection(RunSection):
 
         self.setLayout(layout)
 
+        # self.context_length.valueChanged.connect(self.update_context_length)
+        self.context_length_input.valueChanged.connect(self.update_slider_from_input)
+
+        # 连接信号以更新每个线程的context数量
+        self.context_length.valueChanged.connect(self.update_context_per_thread)
+        self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
+        
+
+        # 初始更新每个线程的context数量
+        self.update_context_per_thread()
+
+
     def _create_context_length_layout(self):
         layout = QHBoxLayout()
         self.context_length = Slider(Qt.Horizontal, self)
-        self.context_length.setRange(256, 32768)
-        self.context_length.setPageStep(256)
-        self.context_length.setValue(2048)
-        self.context_length.valueChanged.connect(lambda value: self.context_length_input.setValue(value))
+        self.context_length.setRange(0, 100)
+        self.context_length.setPageStep(1)
+        self.context_length.setValue(50)  # 默认值设为50，对应约2048
 
         self.context_length_input = SpinBox(self)
-        self.context_length_input.setRange(256, 32768)
+        self.context_length_input.setRange(256, 131072)
         self.context_length_input.setSingleStep(256)
         self.context_length_input.setValue(2048)
-        self.context_length_input.valueChanged.connect(lambda value: self.context_length.setValue(value))
 
         layout.addWidget(self.context_length)
         layout.addWidget(self.context_length_input)
+
+        # 使用单一的更新函数来避免循环
+        self.context_length.valueChanged.connect(self.update_context_from_slider)
+        self.context_length_input.valueChanged.connect(self.update_slider_from_input)
+
         return layout
+
+    def update_context_from_slider(self, value):
+        if self.context_length_input.hasFocus():
+            return  # 如果SpinBox正在被编辑，不要更新它
+
+        # 将0-100映射到256-131072，并取整到256的整数倍
+        min_value = 256
+        max_value = 131072
+        context_length = int(min_value * (max_value / min_value) ** (value / 100))
+        context_length = max(min_value, min(max_value, context_length))
+        context_length = round(context_length / 256) * 256  # 取整到256的整数倍
+
+        self.context_length_input.blockSignals(True)
+        self.context_length_input.setValue(context_length)
+        self.context_length_input.blockSignals(False)
+
+        self.update_context_per_thread()
+
+    def update_slider_from_input(self, value):
+        if self.context_length.isSliderDown():
+            return  # 如果滑块正在被拖动，不要更新它
+
+        # 确保输入值是256的整数倍
+        value = round(value / 256) * 256
+        
+        # 将256-131072映射回0-100
+        min_value = 256
+        max_value = 131072
+        slider_value = int(100 * math.log(value / min_value) / math.log(max_value / min_value))
+        slider_value = max(0, min(100, slider_value))  # 确保在0-100范围内
+
+        self.context_length.blockSignals(True)
+        self.context_length.setValue(slider_value)
+        self.context_length.blockSignals(False)
+
+        self.update_context_per_thread()
+
+    def update_context_per_thread(self):
+        total_context = self.context_length_input.value()  # 使用实际的context长度
+        n_parallel = self.n_parallel_spinbox.value()
+        context_per_thread = total_context // n_parallel
+        self.context_per_thread_label.setText(f"每个线程的context数量: {context_per_thread}")
 
     def save_preset(self):
         preset_name = self.config_preset_combo.currentText()
@@ -372,7 +433,6 @@ class RunServerSection(RunSection):
             MessageBox("错误", "预设名称不能为空", self).exec()
             return
 
-        # 读取当前配置
         config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
         if not os.path.exists(config_file_path):
             with open(config_file_path, 'w', encoding='utf-8') as f:
@@ -384,7 +444,6 @@ class RunServerSection(RunSection):
             except json.JSONDecodeError:
                 current_settings = {}
 
-        # 更新或新增预设
         preset_section = current_settings.get(self.title, [])
         new_preset = {
             'name': preset_name,
@@ -396,18 +455,14 @@ class RunServerSection(RunSection):
                 'no_mmap': self.no_mmap_check.isChecked(),
                 'gpu_enabled': self.gpu_enabled_check.isChecked(),
                 'gpu': self.gpu_combo.currentText(),
-                'model_path': self.model_path.currentText()
-            }
-        }
-
-        if self.title == '运行server':
-            new_preset['config'].update({
-                'context_length': self.context_length.value(),
+                'model_path': self.model_path.currentText(),
+                'context_length': self.context_length_input.value(),
                 'n_parallel': self.n_parallel_spinbox.value(),
                 'host': self.host_input.currentText(),
                 'port': self.port_input.text(),
                 'log_format': self.log_format_combo.currentText()
-            })
+            }
+        }
 
         for i, preset in enumerate(preset_section):
             if preset['name'] == preset_name:
@@ -418,7 +473,6 @@ class RunServerSection(RunSection):
 
         current_settings[self.title] = preset_section
 
-        # 保存配置
         with open(config_file_path, 'w', encoding='utf-8') as f:
             json.dump(current_settings, f, ensure_ascii=False, indent=4)
 
@@ -445,22 +499,17 @@ class RunServerSection(RunSection):
                     self.custom_command.setPlainText(config.get('custom_command', ''))
                     self.custom_command_append.setPlainText(config.get('custom_command_append', ''))
                     self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 99))
-                    self.model_path.setCurrentText(config.get('model_path', ''))  # 加载模型路径
-                    if self.title == '运行server':
-                        if hasattr(self, 'context_length'):
-                            self.context_length.setValue(config.get('context_length', 1024))
-                        if hasattr(self, 'n_parallel_spinbox'):
-                            self.n_parallel_spinbox.setValue(config.get('n_parallel', 1))
-                        if hasattr(self, 'host_input'):
-                            self.host_input.setText(config.get('host', '127.0.0.1'))
-                        if hasattr(self, 'port_input'):
-                            self.port_input.setText(config.get('port', '8080'))
-                        if hasattr(self, 'log_format_combo'):
-                            self.log_format_combo.setText(config.get('log_format', 'text'))
+                    self.model_path.setCurrentText(config.get('model_path', ''))
+                    self.context_length.setValue(config.get('context_length', 1024))
+                    self.n_parallel_spinbox.setValue(config.get('n_parallel', 1))
+                    self.host_input.setText(config.get('host', '127.0.0.1'))
+                    self.port_input.setText(config.get('port', '8080'))
+                    self.log_format_combo.setText(config.get('log_format', 'text'))
                     self.flash_attention_check.setChecked(config.get('flash_attention', True))
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
                     self.gpu_combo.setCurrentText(config.get('gpu', ''))
+                    self.update_context_per_thread()  # 更新每个线程的context数量
                     break
 
     def load_presets_from_file(self):
@@ -986,11 +1035,11 @@ AMD显卡支持列表：
 
     def download_llamacpp(self, version):
         if version == "CUDA 版本":
-            url = "https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-cuda-cu12.2.0-x64.zip"
+            url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-cuda-cu12.2.0-x64.zip"
         elif version == "ROCm 版本 (感谢Sora维护)":
-            url = "https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-rocm-avx2-x64.zip"
+            url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-rocm-avx2-x64.zip"
         elif version == "Vulkan 版本":
-            url = "https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-vulkan-x64.zip"
+            url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-vulkan-x64.zip"
         else:
             self.on_download_error("未知的版本")
             return
@@ -1497,7 +1546,7 @@ class MainWindow(MSFluentWindow):
 
             if old_executable == 'server' or new_executable == 'llama-server':
                 command += f' -ngl {section.gpu_layers_spinbox.value()}'
-                command += f' -c {section.context_length.value()}'
+                command += f' -c {section.context_length_input.value()}'
                 command += f' -a {model_name}'
                 command += f' --host {section.host_input.currentText()} --port {section.port_input.text()}'
                 command += f' --log-format {section.log_format_combo.currentText()}'

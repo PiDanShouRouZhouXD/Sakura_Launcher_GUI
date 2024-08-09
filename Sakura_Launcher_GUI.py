@@ -330,7 +330,6 @@ class RunServerSection(RunSection):
 
         layout.addLayout(self._create_slider_spinbox_layout("并行工作线程数 -np", "n_parallel", 1, 1, 32, 1))
 
-        # 新增：每个线程的context数量标签
         self.context_per_thread_label = QLabel(self)
         layout.addWidget(self.context_per_thread_label)
 
@@ -352,24 +351,19 @@ class RunServerSection(RunSection):
 
         self.setLayout(layout)
 
-        # self.context_length.valueChanged.connect(self.update_context_length)
         self.context_length_input.valueChanged.connect(self.update_slider_from_input)
-
-        # 连接信号以更新每个线程的context数量
         self.context_length.valueChanged.connect(self.update_context_per_thread)
         self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
         
-
-        # 初始更新每个线程的context数量
         self.update_context_per_thread()
 
 
     def _create_context_length_layout(self):
         layout = QHBoxLayout()
         self.context_length = Slider(Qt.Horizontal, self)
-        self.context_length.setRange(0, 100)
-        self.context_length.setPageStep(1)
-        self.context_length.setValue(50)  # 默认值设为50，对应约2048
+        self.context_length.setRange(0, 10000)
+        self.context_length.setPageStep(5)
+        self.context_length.setValue(5000)
 
         self.context_length_input = SpinBox(self)
         self.context_length_input.setRange(256, 131072)
@@ -379,50 +373,41 @@ class RunServerSection(RunSection):
         layout.addWidget(self.context_length)
         layout.addWidget(self.context_length_input)
 
-        # 使用单一的更新函数来避免循环
         self.context_length.valueChanged.connect(self.update_context_from_slider)
         self.context_length_input.valueChanged.connect(self.update_slider_from_input)
 
         return layout
 
+    def context_to_slider(self, context):
+        min_value = math.log(256)
+        max_value = math.log(131072)
+        return int(10000 * (math.log(context) - min_value) / (max_value - min_value))
+
+    def slider_to_context(self, value):
+        min_value = math.log(256)
+        max_value = math.log(131072)
+        return int(math.exp(min_value + (value / 10000) * (max_value - min_value)))
+
     def update_context_from_slider(self, value):
-        if self.context_length_input.hasFocus():
-            return  # 如果SpinBox正在被编辑，不要更新它
-
-        # 将0-100映射到256-131072，并取整到256的整数倍
-        min_value = 256
-        max_value = 131072
-        context_length = int(min_value * (max_value / min_value) ** (value / 100))
-        context_length = max(min_value, min(max_value, context_length))
-        context_length = round(context_length / 256) * 256  # 取整到256的整数倍
-
+        context_length = self.slider_to_context(value)
+        context_length = max(256, min(131072, context_length))
+        context_length = round(context_length / 256) * 256
         self.context_length_input.blockSignals(True)
         self.context_length_input.setValue(context_length)
         self.context_length_input.blockSignals(False)
-
         self.update_context_per_thread()
 
     def update_slider_from_input(self, value):
-        if self.context_length.isSliderDown():
-            return  # 如果滑块正在被拖动，不要更新它
 
-        # 确保输入值是256的整数倍
         value = round(value / 256) * 256
-        
-        # 将256-131072映射回0-100
-        min_value = 256
-        max_value = 131072
-        slider_value = int(100 * math.log(value / min_value) / math.log(max_value / min_value))
-        slider_value = max(0, min(100, slider_value))  # 确保在0-100范围内
-
-        self.context_length.blockSignals(True)
+        slider_value = self.context_to_slider(value)
+        slider_value = max(0, min(10000, slider_value))
         self.context_length.setValue(slider_value)
-        self.context_length.blockSignals(False)
-
+        self.context_length.update()
         self.update_context_per_thread()
 
     def update_context_per_thread(self):
-        total_context = self.context_length_input.value()  # 使用实际的context长度
+        total_context = self.context_length_input.value()
         n_parallel = self.n_parallel_spinbox.value()
         context_per_thread = total_context // n_parallel
         self.context_per_thread_label.setText(f"每个线程的context数量: {context_per_thread}")
@@ -500,16 +485,17 @@ class RunServerSection(RunSection):
                     self.custom_command_append.setPlainText(config.get('custom_command_append', ''))
                     self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 99))
                     self.model_path.setCurrentText(config.get('model_path', ''))
-                    self.context_length.setValue(config.get('context_length', 1024))
+                    self.context_length_input.setValue(config.get('context_length', 2048))
+                    # self.update_slider_from_input(self.context_length_input)
                     self.n_parallel_spinbox.setValue(config.get('n_parallel', 1))
-                    self.host_input.setText(config.get('host', '127.0.0.1'))
+                    self.host_input.setCurrentText(config.get('host', '127.0.0.1'))
                     self.port_input.setText(config.get('port', '8080'))
-                    self.log_format_combo.setText(config.get('log_format', 'text'))
+                    self.log_format_combo.setCurrentText(config.get('log_format', 'text'))
                     self.flash_attention_check.setChecked(config.get('flash_attention', True))
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
                     self.gpu_combo.setCurrentText(config.get('gpu', ''))
-                    self.update_context_per_thread()  # 更新每个线程的context数量
+                    self.update_context_per_thread()
                     break
 
     def load_presets_from_file(self):

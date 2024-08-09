@@ -445,7 +445,8 @@ class RunServerSection(RunSection):
                 'n_parallel': self.n_parallel_spinbox.value(),
                 'host': self.host_input.currentText(),
                 'port': self.port_input.text(),
-                'log_format': self.log_format_combo.currentText()
+                'log_format': self.log_format_combo.currentText(),
+                'gpu_index': self.manully_select_gpu_index.text()
             }
         }
 
@@ -483,7 +484,7 @@ class RunServerSection(RunSection):
                     config = preset['config']
                     self.custom_command.setPlainText(config.get('custom_command', ''))
                     self.custom_command_append.setPlainText(config.get('custom_command_append', ''))
-                    self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 99))
+                    self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 200))
                     self.model_path.setCurrentText(config.get('model_path', ''))
                     self.context_length_input.setValue(config.get('context_length', 2048))
                     # self.update_slider_from_input(self.context_length_input)
@@ -495,6 +496,7 @@ class RunServerSection(RunSection):
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
                     self.gpu_combo.setCurrentText(config.get('gpu', ''))
+                    self.manully_select_gpu_index.setText(config.get('gpu_index', ''))
                     self.update_context_per_thread()
                     break
 
@@ -597,7 +599,8 @@ class RunBenchmarkSection(RunSection):
                 'no_mmap': self.no_mmap_check.isChecked(),
                 'gpu_enabled': self.gpu_enabled_check.isChecked(),
                 'gpu': self.gpu_combo.currentText(),
-                'model_path': self.model_path.currentText()
+                'model_path': self.model_path.currentText(),
+                'gpu_index': self.manully_select_gpu_index.text()
             }
         }
 
@@ -641,6 +644,7 @@ class RunBenchmarkSection(RunSection):
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
                     self.gpu_combo.setCurrentText(config.get('gpu', ''))
+                    self.manully_select_gpu_index.setText(config.get('gpu_index', ''))
                     break
 
     def load_presets_from_file(self):
@@ -760,6 +764,7 @@ class RunBatchBenchmarkSection(RunSection):
                 'no_mmap': self.no_mmap_check.isChecked(),
                 'gpu_enabled': self.gpu_enabled_check.isChecked(),
                 'gpu': self.gpu_combo.currentText(),
+                'gpu_index': self.manully_select_gpu_index.text(),
                 'model_path': self.model_path.currentText(),
                 'npp': self.npp_input.text(),
                 'ntg': self.ntg_input.text(),
@@ -812,7 +817,8 @@ class RunBatchBenchmarkSection(RunSection):
                     self.flash_attention_check.setChecked(config.get('flash_attention', True))
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
-                    self.gpu_combo.setCurrentText(config.get('gpu', ''))
+                    self.gpu_combo.setCurrentText(config.get('gpu', '')),
+                    self.manully_select_gpu_index.setText(config.get('gpu_index', ''))
                     break
 
     def load_presets_from_file(self):

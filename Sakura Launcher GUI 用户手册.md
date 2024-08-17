@@ -8,15 +8,15 @@ Sakura Launcher GUI 是一个用于启动和管理SakuraLLM相关任务的图形
 
 双击打开程序，点击左边的"下载"按钮。在模型下载界面选择适合你的显存的模型进行下载，请耐心等待下方进度条走完并提示下载完成。
 
-<img src="assets/image-20240817190724154.png" alt="image-20240817190724154" style="zoom:33%;" />
+<div align=center><img src="assets/image-20240817190724154.png" width="540px"></div>
 
 点击右上角的llama.cpp下载，仔细阅读说明，下载适合你的显卡的llamacpp版本进行下载，请耐心等待下方进度条走完并提示下载完成、解压完成。
 
-<img src="assets/image-20240817190749367.png" alt="image-20240817190749367" style="zoom:33%;" />
+<div align=center><img src="assets/image-20240817190749367.png" width="540px"></div>
 
 返回运行server界面，直接点击"运行"。
 
-<img src="assets/image-20240817190801327.png" alt="image-20240817190801327" style="zoom:33%;" />
+<div align=center><img src="assets/image-20240817190801327.png" width="540px"></div>
 
 现在，你可以在需要使用sakura的工具，如[轻小说机翻机器人](https://books.fishhawk.top/)、[GalTransl](https://github.com/xd2333/GalTransl)、[BallonsTranslator](https://github.com/dmMaze/BallonsTranslator)中填入你设置好的地址开始使用了。
 

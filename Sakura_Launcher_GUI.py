@@ -341,6 +341,11 @@ class RunServerSection(RunSection):
 
         layout.addLayout(self._create_gpu_selection_layout())
 
+        # 新增llamacpp覆盖选项
+        self.llamacpp_override = self._create_line_edit("覆盖默认llamacpp路径（可选）", "")
+        layout.addWidget(QLabel("覆盖默认llamacpp路径"))
+        layout.addWidget(self.llamacpp_override)
+
         self.custom_command_append = TextEdit(self)
         self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
         layout.addWidget(self.custom_command_append)
@@ -446,7 +451,8 @@ class RunServerSection(RunSection):
                 'host': self.host_input.currentText(),
                 'port': self.port_input.text(),
                 'log_format': self.log_format_combo.currentText(),
-                'gpu_index': self.manully_select_gpu_index.text()
+                'gpu_index': self.manully_select_gpu_index.text(),
+                'llamacpp_override': self.llamacpp_override.text()
             }
         }
 
@@ -487,7 +493,6 @@ class RunServerSection(RunSection):
                     self.gpu_layers_spinbox.setValue(config.get('gpu_layers', 200))
                     self.model_path.setCurrentText(config.get('model_path', ''))
                     self.context_length_input.setValue(config.get('context_length', 2048))
-                    # self.update_slider_from_input(self.context_length_input)
                     self.n_parallel_spinbox.setValue(config.get('n_parallel', 1))
                     self.host_input.setCurrentText(config.get('host', '127.0.0.1'))
                     self.port_input.setText(config.get('port', '8080'))
@@ -497,6 +502,7 @@ class RunServerSection(RunSection):
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
                     self.gpu_combo.setCurrentText(config.get('gpu', ''))
                     self.manully_select_gpu_index.setText(config.get('gpu_index', ''))
+                    self.llamacpp_override.setText(config.get('llamacpp_override', ''))
                     self.update_context_per_thread()
                     break
 
@@ -561,6 +567,11 @@ class RunBenchmarkSection(RunSection):
 
         layout.addLayout(self._create_gpu_selection_layout())
 
+        # 新增llamacpp覆盖选项
+        self.llamacpp_override = self._create_line_edit("覆盖默认llamacpp路径（可选）", "")
+        layout.addWidget(QLabel("覆盖默认llamacpp路径"))
+        layout.addWidget(self.llamacpp_override)
+
         self.custom_command_append = TextEdit(self)
         self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
         layout.addWidget(self.custom_command_append)
@@ -600,7 +611,8 @@ class RunBenchmarkSection(RunSection):
                 'gpu_enabled': self.gpu_enabled_check.isChecked(),
                 'gpu': self.gpu_combo.currentText(),
                 'model_path': self.model_path.currentText(),
-                'gpu_index': self.manully_select_gpu_index.text()
+                'gpu_index': self.manully_select_gpu_index.text(),
+                'llamacpp_override': self.llamacpp_override.text()
             }
         }
 
@@ -645,6 +657,7 @@ class RunBenchmarkSection(RunSection):
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
                     self.gpu_combo.setCurrentText(config.get('gpu', ''))
                     self.manully_select_gpu_index.setText(config.get('gpu_index', ''))
+                    self.llamacpp_override.setText(config.get('llamacpp_override', ''))
                     break
 
     def load_presets_from_file(self):
@@ -701,7 +714,6 @@ class RunBatchBenchmarkSection(RunSection):
         layout.addLayout(self._create_slider_spinbox_layout("GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
         layout.addLayout(self._create_slider_spinbox_layout("最大上下文长度 -c", "ctx_size", 8192, 1, 65535, 512))
 
-        # 新增批量基准测试相关UI
         layout.addWidget(QLabel("Prompt数量 -npp"))
         self.npp_input = self._create_line_edit("Prompt数量，多个值用英文逗号分隔，如： 128,256,512", "128,256,512")
         layout.addWidget(self.npp_input)
@@ -724,6 +736,11 @@ class RunBatchBenchmarkSection(RunSection):
         layout.addWidget(self.no_mmap_check)
 
         layout.addLayout(self._create_gpu_selection_layout())
+
+        # 新增llamacpp覆盖选项
+        self.llamacpp_override = self._create_line_edit("覆盖默认llamacpp路径（可选）", "")
+        layout.addWidget(QLabel("覆盖默认llamacpp路径"))
+        layout.addWidget(self.llamacpp_override)
 
         self.custom_command_append = TextEdit(self)
         self.custom_command_append.setPlaceholderText("手动追加命令（追加到UI选择的命令后）")
@@ -770,6 +787,7 @@ class RunBatchBenchmarkSection(RunSection):
                 'ntg': self.ntg_input.text(),
                 'npl': self.npl_input.text(),
                 'pps': self.pps_check.isChecked(),
+                'llamacpp_override': self.llamacpp_override.text()
             }
         }
 
@@ -817,8 +835,9 @@ class RunBatchBenchmarkSection(RunSection):
                     self.flash_attention_check.setChecked(config.get('flash_attention', True))
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
-                    self.gpu_combo.setCurrentText(config.get('gpu', '')),
+                    self.gpu_combo.setCurrentText(config.get('gpu', ''))
                     self.manully_select_gpu_index.setText(config.get('gpu_index', ''))
+                    self.llamacpp_override.setText(config.get('llamacpp_override', ''))
                     break
 
     def load_presets_from_file(self):
@@ -949,13 +968,13 @@ class DownloadSection(QFrame):
 
         # 添加说明性文字
         description = QLabel(
-            "您可以在这里下载不同版本的模型，或手动从huggingface下载模型。\n8G以下显存推荐使用GalTransl-7B-v1.5_IQ4_XS.gguf，\n8G以上显存推荐使用Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf。\n模型会下载到程序所在的目录。")
+            "您可以在这里下载不同版本的模型，或手动从huggingface下载模型。\n8G以下显存推荐使用Galtransl-7B-v2-IQ4_XS.gguf，\n8G以上显存推荐使用Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf。\n模型会下载到程序所在的目录。")
         description.setWordWrap(True)
         layout.addWidget(description)
 
         self.model_download_table = self.create_download_table()
         self.add_download_item(self.model_download_table,
-                               "GalTransl-7B-v1.5_IQ4_XS.gguf", self.download_model)
+                               "Galtransl-7B-v2-IQ4_XS.gguf", self.download_model)
         self.add_download_item(
             self.model_download_table, "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf", self.download_model)
         layout.addWidget(self.model_download_table)
@@ -1015,8 +1034,8 @@ AMD显卡支持列表：
         table.setCellWidget(row, 1, download_button)
 
     def download_model(self, model_name):
-        if model_name == "GalTransl-7B-v1.5_IQ4_XS.gguf":
-            url = "https://hf-mirror.com/SakuraLLM/GalTransl-7B-v1.5/resolve/main/GalTransl-7B-v1.5-IQ4_XS.gguf"
+        if model_name == "Galtransl-7B-v2-IQ4_XS.gguf":
+            url = "https://hf-mirror.com/SakuraLLM/Galtransl-7B-v2/resolve/main/Galtransl-7B-v2-IQ4_XS.gguf"
         elif model_name == "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf":
             url = "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf"
         else:
@@ -1220,12 +1239,15 @@ class ConfigEditor(QFrame):
         
         self.run_server_section = QWidget(self)
         self.run_bench_section = QWidget(self)
+        self.run_batch_bench_section = QWidget(self)  # New section for batch bench
         
         self.init_run_server_section()
         self.init_run_bench_section()
+        self.init_run_batch_bench_section()  # Initialize the new section
 
         self.add_sub_interface(self.run_server_section, 'run_server_section', 'Server')
         self.add_sub_interface(self.run_bench_section, 'run_bench_section', 'Bench')
+        self.add_sub_interface(self.run_batch_bench_section, 'run_batch_bench_section', 'Batch Bench')  # Add new interface
 
         save_button = PrimaryPushButton(FIF.SAVE, '保存配置预设', self)
         save_button.clicked.connect(self.save_settings)
@@ -1269,6 +1291,12 @@ class ConfigEditor(QFrame):
         layout.addWidget(self.run_bench_table)
         self.run_bench_section.setLayout(layout)
 
+    def init_run_batch_bench_section(self):
+        layout = QVBoxLayout(self.run_batch_bench_section)
+        self.run_batch_bench_table = self.create_config_table()
+        layout.addWidget(self.run_batch_bench_table)
+        self.run_batch_bench_section.setLayout(layout)
+
     def create_config_table(self):
         table = TableWidget()
         table.setColumnCount(4)
@@ -1280,10 +1308,12 @@ class ConfigEditor(QFrame):
     def save_settings(self):
         server_configs = self.table_to_config(self.run_server_table)
         bench_configs = self.table_to_config(self.run_bench_table)
+        batch_bench_configs = self.table_to_config(self.run_batch_bench_table)  # Add this line
 
         settings = {
             '运行server': server_configs,
-            '运行bench': bench_configs
+            '运行bench': bench_configs,
+            '批量运行bench': batch_bench_configs  # Add this line
         }
 
         config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
@@ -1314,6 +1344,7 @@ class ConfigEditor(QFrame):
 
         self.config_to_table(self.run_server_table, settings.get('运行server', []))
         self.config_to_table(self.run_bench_table, settings.get('运行bench', []))
+        self.config_to_table(self.run_batch_bench_table, settings.get('批量运行bench', []))  # Add this line
 
     def table_to_config(self, table):
         configs = []
@@ -1508,18 +1539,18 @@ class MainWindow(MSFluentWindow):
 
     def _run_llamacpp(self, section, old_executable, new_executable=None):
         custom_command = section.custom_command.toPlainText().strip()
-        llamacpp_path = self.get_llamacpp_path()
+        llamacpp_override = section.llamacpp_override.text().strip()
+        llamacpp_path = llamacpp_override if llamacpp_override else self.get_llamacpp_path()
         exe_extension = '.exe' if sys.platform == 'win32' else ''
 
         if not os.path.exists(llamacpp_path):
-            MessageBox("错误", f"llamacpp路径不存在", self).exec()
+            MessageBox("错误", f"llamacpp路径不存在: {llamacpp_path}", self).exec()
             return
 
         model_name = section.model_path.currentText().split(os.sep)[-1]
         model_path = self._add_quotes(section.model_path.currentText())
         self.log_info(f"模型路径: {model_path}")
         self.log_info(f"模型名称: {model_name}")
-        
 
         # 判断使用哪个可执行文件
         executable_path = os.path.join(llamacpp_path, f"{new_executable or old_executable}{exe_extension}")

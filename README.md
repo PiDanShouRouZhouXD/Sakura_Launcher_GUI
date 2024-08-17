@@ -23,9 +23,7 @@
 
 </p>
 
- 本篇README.md主要面向开发者，需要直接使用Sakura Launcher GUI的用户请直接从右边的Release下载最新版本。
-
- 如需使用指南，请查看[用户手册](https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/blob/main/Sakura%20Launcher%20GUI%20%E7%94%A8%E6%88%B7%E6%89%8B%E5%86%8C.md)。
+ 本篇README.md主要面向开发者，如需使用指南，请查看[用户手册](https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/blob/main/Sakura%20Launcher%20GUI%20%E7%94%A8%E6%88%B7%E6%89%8B%E5%86%8C.md)。
 
 ## 目录
 
@@ -38,10 +36,7 @@
 
 
 ### **界面预览**
-<div align=center><img src="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/assets/38401147/67f1097d-7673-42a4-8f98-7161c9896b9f" width="540px"></div>
-
-<div align=center><img src="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/assets/38401147/5c15ac3d-35ef-43e8-bc53-afca0c3402e9" width="540px"></div>
-
+<div align=center><img src="https://github.com/user-attachments/assets/d22c9554-7c73-4bc4-b0d3-f5bfa88d1990" width="540px"></div>
 
 ### **安装步骤**
 

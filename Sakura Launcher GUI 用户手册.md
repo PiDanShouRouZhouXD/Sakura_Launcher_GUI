@@ -46,8 +46,12 @@ Sakura Launcher GUI 是一个用于启动和管理SakuraLLM相关任务的图形
   - 设为0则为纯CPU运行
 
 - 上下文长度（-c）：设置模型的上下文长度，范围256-131072
+  - 对于即时翻译任务，如[LunaTranslator](https://github.com/HIllya51/LunaTranslator)，每个线程的上下文长度不应当小于512
+  - 对于翻译工具，如[GalTransl](https://github.com/xd2333/GalTransl)或[轻小说机翻机器人](https://books.fishhawk.top/)，每个线程的上下文长度不应当小于1536
 - 并行工作线程数（-np）：设置并行处理的线程数，范围1-32
-  - 会自动计算实际上每个线程的上下文长度，显示在UI上
+  - 设置线程大于1时，context数量将会平均分配给每个线程。程序会自动计算实际上每个线程的上下文长度，并显示在UI上，请注意查看
+    - <div align=left><img src="https://github.com/user-attachments/assets/df59bffd-a29e-4dc3-94f6-a0d394d2e09d" width="540px"></div>
+
 
 #### 2.1.5 优化选项
 - 启用Flash Attention（-fa）：勾选以启用Flash Attention优化

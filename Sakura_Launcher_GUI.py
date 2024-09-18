@@ -32,7 +32,7 @@ def get_resource_path(relative_path):
 CURRENT_DIR = get_self_path()
 CONFIG_FILE = 'sakura-launcher_config.json'
 ICON_FILE = 'icon.png'
-SAKURA_LAUNCHER_GUI_VERSION = '0.0.4'
+SAKURA_LAUNCHER_GUI_VERSION = '0.0.4-fix1'
 
 processes = []
 
@@ -313,7 +313,7 @@ class RunServerSection(RunSection):
         host_layout.addWidget(self.port_input)
 
         log_layout = QVBoxLayout()
-        self.log_format_combo = self._create_editable_combo_box(["text", "json"])
+        self.log_format_combo = self._create_editable_combo_box(["none", "text", "json"])
         log_layout.addWidget(QLabel("日志格式 --log-format"))
         log_layout.addWidget(self.log_format_combo)
 
@@ -496,7 +496,7 @@ class RunServerSection(RunSection):
                     self.n_parallel_spinbox.setValue(config.get('n_parallel', 1))
                     self.host_input.setCurrentText(config.get('host', '127.0.0.1'))
                     self.port_input.setText(config.get('port', '8080'))
-                    self.log_format_combo.setCurrentText(config.get('log_format', 'text'))
+                    self.log_format_combo.setCurrentText(config.get('log_format', 'none'))
                     self.flash_attention_check.setChecked(config.get('flash_attention', True))
                     self.no_mmap_check.setChecked(config.get('no_mmap', True))
                     self.gpu_enabled_check.setChecked(config.get('gpu_enabled', True))
@@ -1572,7 +1572,8 @@ class MainWindow(MSFluentWindow):
                 command += f' -c {section.context_length_input.value()}'
                 command += f' -a {model_name}'
                 command += f' --host {section.host_input.currentText()} --port {section.port_input.text()}'
-                command += f' --log-format {section.log_format_combo.currentText()}'
+                if section.log_format_combo.currentText() not in ("none", ""):
+                    command += f' --log-format {section.log_format_combo.currentText()}'
                 command += f' -np {section.n_parallel_spinbox.value()}'
 
                 if section.flash_attention_check.isChecked():

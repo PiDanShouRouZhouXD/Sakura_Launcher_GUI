@@ -3,7 +3,6 @@ import os
 import wmi
 import json
 import subprocess
-import atexit
 import logging
 import requests
 import math
@@ -1884,9 +1883,9 @@ class MainWindow(MSFluentWindow):
         for proc in processes:
             proc.terminate()
             try:
-                proc.wait(timeout=0.1)  # 等待最多5秒
+                proc.wait(timeout=0.1)  # 等待最多0.1秒
             except subprocess.TimeoutExpired:
-                proc.kill()  # 如果进程没有在5秒内终止，强制结束它
+                proc.kill()
         processes.clear()
 
     def refresh_gpus(self):

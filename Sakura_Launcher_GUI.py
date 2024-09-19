@@ -7,10 +7,13 @@ import atexit
 import logging
 import requests
 import math
+import re
+import time
+import threading
 from enum import Enum
 from functools import partial
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QThread
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QStackedWidget, QDialog, QDialogButtonBox, QComboBox, QLineEdit
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QStackedWidget, QDialog, QDialogButtonBox, QComboBox, QLineEdit, QSpacerItem, QSizePolicy
 from PySide6.QtGui import QIcon, QColor
 from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget, InfoBar, InfoBarPosition, ProgressBar
 
@@ -32,7 +35,8 @@ def get_resource_path(relative_path):
 CURRENT_DIR = get_self_path()
 CONFIG_FILE = 'sakura-launcher_config.json'
 ICON_FILE = 'icon.png'
-SAKURA_LAUNCHER_GUI_VERSION = '0.0.4-fix1'
+CLOUDFLARED = 'cloudflared-windows-amd64.exe'
+SAKURA_LAUNCHER_GUI_VERSION = '0.0.5-beta'
 
 processes = []
 
@@ -339,6 +343,9 @@ class RunServerSection(RunSection):
         self.no_mmap_check = self._create_check_box("启用 --no-mmap", True)
         layout.addWidget(self.no_mmap_check)
 
+        self.is_sharing = self._create_check_box("启动后自动开启共享", False)
+        layout.addWidget(self.is_sharing)
+
         layout.addLayout(self._create_gpu_selection_layout())
 
         # 新增llamacpp覆盖选项
@@ -452,7 +459,8 @@ class RunServerSection(RunSection):
                 'port': self.port_input.text(),
                 'log_format': self.log_format_combo.currentText(),
                 'gpu_index': self.manully_select_gpu_index.text(),
-                'llamacpp_override': self.llamacpp_override.text()
+                'llamacpp_override': self.llamacpp_override.text(),
+                'is_sharing': self.is_sharing.isChecked()
             }
         }
 
@@ -503,6 +511,7 @@ class RunServerSection(RunSection):
                     self.gpu_combo.setCurrentText(config.get('gpu', ''))
                     self.manully_select_gpu_index.setText(config.get('gpu_index', ''))
                     self.llamacpp_override.setText(config.get('llamacpp_override', ''))
+                    self.is_sharing.setChecked(config.get('is_sharing', False))
                     self.update_context_per_thread()
                     break
 
@@ -1092,6 +1101,226 @@ AMD显卡支持列表：
         QApplication.processEvents()  # 确保UI更新
         MessageBox("错误", f"下载失败: {error_message}", self).exec()
 
+class CFShareSection(RunSection):
+    def __init__(self, title, main_window, parent=None):
+        super().__init__(title, main_window, parent)
+        self._init_ui()
+        self.load_settings()
+
+    def _init_ui(self):
+        layout = QVBoxLayout()
+
+        buttons_group = QGroupBox("")
+        buttons_layout = QHBoxLayout()
+
+        self.start_button = PrimaryPushButton(FIF.PLAY, '上线', self)
+        self.start_button.clicked.connect(self.start_cf_share)
+        self.start_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.start_button)
+
+        self.stop_button = PushButton(FIF.CLOSE, '下线', self)
+        self.stop_button.clicked.connect(self.stop_cf_share)
+        self.stop_button.setEnabled(False)
+        self.stop_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.stop_button)
+
+        self.save_button = PushButton(FIF.SAVE, '保存', self)
+        self.save_button.clicked.connect(self.save_settings)
+        self.save_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.save_button)
+
+        buttons_layout.setAlignment(Qt.AlignRight)
+        buttons_group.setStyleSheet(""" QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}""")
+        buttons_group.setLayout(buttons_layout)
+        layout.addWidget(buttons_group)
+
+        layout.addWidget(QLabel("WORKER_URL:"))
+        self.worker_url_input = self._create_line_edit("输入WORKER_URL", "https://sakura-share.1percentsync.games")
+        layout.addWidget(self.worker_url_input)
+
+        self.status_label = QLabel("状态: 未运行")
+        layout.addWidget(self.status_label)
+
+        description = QLabel()
+        description.setText("""
+        <html>
+        <body>
+        <h3>说明</h3>
+        <p>这是一个一键分享你本地部署的Sakura模型给其他用户（成为帕鲁）的工具，服务端部署请按照下面的仓库的文档进行。</p>
+        <ol>
+            <li>请确保本地服务已启动。</li>
+            <li>请确保WORKER_URL正确。<br>
+            <span>如无特殊需求，请使用默认的WORKER_URL，此链接是由共享脚本开发者本人维护的。</span></li>
+            <li>目前仅支持Windows系统，其他系统请自行更改脚本。</li>
+            <li>目前仅支持以下两种模型（服务端有模型指纹检查）：
+                <ul>
+                    <li>sakura-14b-qwen2beta-v0.9.2-iq4xs</li>
+                    <li>sakura-14b-qwen2beta-v0.9.2-q4km</li>
+                </ul>
+            </li>
+            <li>当你不想成为帕鲁的时候，也可以通过这个链接来访问其他帕鲁的模型，但不保证服务的可用性与稳定性。</li>
+        </ol>
+        </body>
+        </html>
+        """)
+        description.setTextFormat(Qt.RichText)
+        description.setWordWrap(True)
+        description.setStyleSheet("""
+            QLabel {
+                border-radius: 5px;
+                padding: 15px;
+            }
+        """)
+        layout.addWidget(description)
+
+        sakura_share_url = "https://github.com/1PercentSync/sakura-share"
+        link = QLabel(f"<a href='{sakura_share_url}'>点击前往仓库</a>")
+        link.setOpenExternalLinks(True)
+        link.setAlignment(Qt.AlignCenter)
+        link.setStyleSheet("""
+            QLabel {
+                padding: 10px;
+            }
+        """)
+        layout.addWidget(link)
+
+        layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+
+        self.setLayout(layout)
+
+        self.cloudflared_process = None
+        self.health_thread = None
+        self.tunnel_url = None
+
+    def start_cf_share(self):
+        worker_url = self.worker_url_input.text().strip()
+        if not worker_url:
+            MessageBox("错误", "请输入WORKER_URL", self).exec()
+        port = self.main_window.run_server_section.port_input.text().strip()
+        if not port:
+            MessageBox("错误", "请在运行server面板中设置端口号", self).exec()
+        is_healthy = self.check_local_health_status()
+        if not is_healthy:
+            MessageBox("错误", "本地服务未启动或未正常运行，请先启动本地服务", self).exec()
+        self.worker_url = worker_url
+        cloudflared_path = get_resource_path(CLOUDFLARED)
+        self.cloudflared_process = subprocess.Popen([cloudflared_path, "tunnel", "--url", f"http://localhost:{port}", "--metrics", "localhost:8081"])
+        QTimer.singleShot(10000, self.check_tunnel_url)
+
+
+    def check_tunnel_url(self):
+        try:
+            metrics_response = requests.get("http://localhost:8081/metrics")
+            tunnel_url_match = re.search(r'(https://.*?\.trycloudflare\.com)', metrics_response.text)
+            if tunnel_url_match:
+                self.tunnel_url = tunnel_url_match.group(1)
+                self.main_window.log_info(f"Tunnel URL: {self.tunnel_url}")
+                self.register_node()
+                self.start_health_check()
+                self.status_label.setText(f"状态: 运行中 - {self.tunnel_url}")
+                self.start_button.setEnabled(False)
+                self.stop_button.setEnabled(True)
+                self.main_window.createSuccessInfoBar("成功", "已经成功启动分享。")
+            else:
+                self.main_window.log_info("Failed to get tunnel URL")
+                self.stop_cf_share()
+        except Exception as e:
+            self.main_window.log_info(f"Error checking tunnel URL: {str(e)}")
+            self.stop_cf_share()
+
+    def register_node(self):
+        try:
+            api_response = requests.post(
+                f"{self.worker_url}/register-node",
+                json={"url": self.tunnel_url},
+                headers={"Content-Type": "application/json"}
+            )
+            self.main_window.log_info(f"API Response: {api_response.text}")
+        except Exception as e:
+            self.main_window.log_info(f"Error registering node: {str(e)}")
+
+    def start_health_check(self):
+        self.health_thread = threading.Thread(target=self.health_check)
+        self.health_thread.start()
+
+    def health_check(self):
+        while self.cloudflared_process and self.cloudflared_process.poll() is None:
+            if not self.check_local_health_status():
+                self.main_window.log_info("Local service is not healthy. Taking node offline.")
+                self.take_node_offline()
+                self.stop_cf_share()
+                break
+            time.sleep(5)
+
+    def check_local_health_status(self):
+        port = self.main_window.run_server_section.port_input.text().strip()
+        health_url = f"http://localhost:{port}/health"
+        try:
+            response = requests.get(health_url)
+            data = response.json()
+            if data['status'] in ["ok", "no slot available"]:
+                return True
+            else:
+                self.main_window.log_info(f"Local health status: Not healthy - {data['status']}")
+                return False
+        except Exception as e:
+            self.main_window.log_info(f"Error checking local health status: {str(e)}")
+            return False
+
+    def take_node_offline(self):
+        try:
+            offline_response = requests.post(
+                f"{self.worker_url}/delete-node",
+                json={"url": self.tunnel_url},
+                headers={"Content-Type": "application/json"}
+            )
+            self.main_window.log_info(f"Offline Response: {offline_response.text}")
+        except Exception as e:
+            self.main_window.log_info(f"Error taking node offline: {str(e)}")
+
+    def stop_cf_share(self):
+        if self.cloudflared_process:
+            self.cloudflared_process.terminate()
+            try:
+                self.cloudflared_process.wait(timeout=0.2)  # 等待最多0.2秒
+            except subprocess.TimeoutExpired:
+                self.cloudflared_process.kill()  # 如果进程没有在5秒内终止，强制结束它
+            self.cloudflared_process = None
+
+        if self.tunnel_url:
+            self.take_node_offline()
+            self.tunnel_url = None
+
+        self.status_label.setText("状态: 未运行")
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+
+    def save_settings(self):
+        settings = {
+            'worker_url': self.worker_url_input.text().strip()
+        }
+        if not os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump({}, f, ensure_ascii=False, indent=4)
+
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config_data = json.load(f)
+            config_data.update(settings)
+
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=4)
+
+    def load_settings(self):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+        except FileNotFoundError:
+            return
+        except json.JSONDecodeError:
+            return
+        self.worker_url_input.setText(settings.get('worker_url', 'https://sakura-share.1percentsync.games'))
+
+
 class SettingsSection(QFrame):
     def __init__(self, title,main_window, parent=None):
         super().__init__(parent)
@@ -1447,7 +1676,9 @@ class MainWindow(MSFluentWindow):
         self.gpu_manager = GPUManager()
         self.init_navigation()
         self.init_window()
-        atexit.register(self.terminate_all_processes)
+        cloudflared_path = get_resource_path(CLOUDFLARED)
+        if not os.path.exists(cloudflared_path):
+            MessageBox("错误", f"cloudflared 可执行文件不存在: {cloudflared_path}", self).exec()
 
     def init_navigation(self):
         self.settings_section = SettingsSection("设置", self)
@@ -1458,6 +1689,8 @@ class MainWindow(MSFluentWindow):
         self.about_section = AboutSection("关于")
         self.config_editor_section = ConfigEditor("配置编辑", self)
         self.dowload_section = DownloadSection("下载", self)
+        self.cf_share_section = CFShareSection("共享", self)
+    
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
         self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
@@ -1465,6 +1698,7 @@ class MainWindow(MSFluentWindow):
         self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
         self.addSubInterface(self.config_editor_section, FIF.EDIT, "配置编辑")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
+        self.addSubInterface(self.cf_share_section, FIF.SHARE, "共享")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
         self.addSubInterface(self.about_section, FIF.INFO, "关于", position=NavigationItemPosition.BOTTOM)
 
@@ -1497,7 +1731,7 @@ class MainWindow(MSFluentWindow):
 
         icon = get_resource_path(ICON_FILE)
         self.setWindowIcon(QIcon(icon))
-        self.setWindowTitle("Sakura 启动器")
+        self.setWindowTitle(f"Sakura 启动器 v{SAKURA_LAUNCHER_GUI_VERSION}")
         self.resize(600, 400)
 
         desktop = QApplication.screens()[0].availableGeometry()
@@ -1629,13 +1863,30 @@ class MainWindow(MSFluentWindow):
 
         self.log_info("命令已在新的终端窗口中启动。")
 
+        if section.is_sharing.isChecked():
+            cf_share_url = self.cf_share_section.worker_url_input.text()
+            if not cf_share_url:
+                MessageBox("错误", "分享链接不能为空", self).exec()
+                return
+            QTimer.singleShot(25000, self.cf_share_section.start_cf_share)
+
     def log_info(self, message):
         self.log_section.log_display.append(message)
         self.log_section.log_display.ensureCursorVisible()
 
+    def closeEvent(self, event):
+        self.terminate_all_processes()
+        event.accept()
+
     def terminate_all_processes(self):
+        print("Terminating all processes...")
+        self.cf_share_section.stop_cf_share()
         for proc in processes:
             proc.terminate()
+            try:
+                proc.wait(timeout=0.1)  # 等待最多5秒
+            except subprocess.TimeoutExpired:
+                proc.kill()  # 如果进程没有在5秒内终止，强制结束它
         processes.clear()
 
     def refresh_gpus(self):

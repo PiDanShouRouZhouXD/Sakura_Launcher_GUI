@@ -5,7 +5,7 @@ a = Analysis(
     ['Sakura_Launcher_GUI.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.png', '.')],
+    datas=[('icon.png', '.'), ('cloudflared-windows-amd64.exe', '.')],
     hiddenimports=['tiktoken_ext.openai_public', 'tiktoken_ext', 'PySide6', 'PySide6.QtCore', 'PySide6.QtGui', 'qfluentwidgets'],
     hookspath=[],
     hooksconfig={},

@@ -1134,7 +1134,7 @@ class CFShareSection(RunSection):
         layout.addWidget(buttons_group)
 
         layout.addWidget(QLabel("WORKER_URL:"))
-        self.worker_url_input = self._create_line_edit("输入WORKER_URL", "https://sakura-share.1percentsync.games")
+        self.worker_url_input = self._create_line_edit("输入WORKER_URL", "https://sakura-share.one")
         layout.addWidget(self.worker_url_input)
 
         self.status_label = QLabel("状态: 未运行")
@@ -1317,7 +1317,7 @@ class CFShareSection(RunSection):
             return
         except json.JSONDecodeError:
             return
-        self.worker_url_input.setText(settings.get('worker_url', 'https://sakura-share.1percentsync.games'))
+        self.worker_url_input.setText(settings.get('worker_url', 'https://sakura-share.one'))
 
 
 class SettingsSection(QFrame):

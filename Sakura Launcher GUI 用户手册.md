@@ -159,6 +159,13 @@ Sakura Launcher GUI 是一个用于启动和管理SakuraLLM相关任务的图形
 - 提供SakuraLLM项目地址链接
 - 提供Sakura Launcher GUI项目地址链接
 
+### 2.9 共享
+- 上线：开始共享
+- 下线：停止共享
+- 保存：保存自定义的worker url
+- WORKER_URL：自定义自行部署的worker url（不推荐）
+- 关于共享功能的说明，请查看：[sakura-share](https://github.com/1PercentSync/sakura-share)
+
 ## 3. 使用指南
 
 ### 3.1 运行server

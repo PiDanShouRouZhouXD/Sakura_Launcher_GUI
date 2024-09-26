@@ -1,3 +1,4 @@
+from hashlib import sha256
 import sys
 import os
 import wmi
@@ -35,7 +36,7 @@ CURRENT_DIR = get_self_path()
 CONFIG_FILE = 'sakura-launcher_config.json'
 ICON_FILE = 'icon.png'
 CLOUDFLARED = 'cloudflared-windows-amd64.exe'
-SAKURA_LAUNCHER_GUI_VERSION = '0.0.5-beta'
+SAKURA_LAUNCHER_GUI_VERSION = '0.0.6-beta'
 
 processes = []
 
@@ -975,14 +976,26 @@ class DownloadSection(QFrame):
         layout = QVBoxLayout(self.model_download_section)
 
         # 添加说明性文字
-        description = QLabel(
-            "您可以在这里下载不同版本的模型，或手动从huggingface下载模型。\n8G以下显存推荐使用Galtransl-7B-v2-IQ4_XS.gguf，\n8G以上显存推荐使用Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf。\n模型会下载到程序所在的目录。")
+        description = QLabel()
+        description.setText("""
+        <html><body>
+        <h3>模型下载说明</h3>
+        <ul>
+        <li>您可以在这里下载不同版本的模型，或手动从<a href="https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/">Hugging Face</a>下载模型</li>
+        <li>8G以下显存推荐使用GalTransl-7B-v2-IQ4_XS.gguf</li>
+        <li>8G以上显存推荐使用Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf</li>
+        <li>模型会下载到程序所在的目录</li>
+        </ul>
+        </body></html>
+        """)
+        description.setTextFormat(Qt.RichText)
         description.setWordWrap(True)
+        description.setOpenExternalLinks(True)  # 允许打开外部链接
         layout.addWidget(description)
 
         self.model_download_table = self.create_download_table()
         self.add_download_item(self.model_download_table,
-                               "Galtransl-7B-v2-IQ4_XS.gguf", self.download_model)
+                               "GalTransl-7B-v2-IQ4_XS.gguf", self.download_model)
         self.add_download_item(
             self.model_download_table, "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf", self.download_model)
         layout.addWidget(self.model_download_table)
@@ -992,21 +1005,50 @@ class DownloadSection(QFrame):
         layout = QVBoxLayout(self.llamacpp_download_section)
 
         # 添加说明性文字
-        description = QLabel(
-            "您可以在这里下载不同版本的llama.cpp，或手动从Github下载发行版。\nNvidia显卡请选择CUDA版本下载，\nAMD显卡请查看下面的AMD显卡支持列表，\n如果在列表中，请选择ROCm版本下载，\n如果不在列表中，请选择Vulkan版本下载或手动编译。\n注意，Vulkan版本现在还不支持IQ系列的量化。\nllama.cpp会下载到程序所在的目录的llama文件夹内。\n")
+        description = QLabel()
+        description.setText("""
+        <html>
+        <body>
+        <h3>说明</h3>
+        <p>您可以在这里下载不同版本的llama.cpp，或手动从<a href="https://github.com/ggerganov/llama.cpp/releases">GitHub发布页面</a>下载发行版。</p>
+        <ol>
+            <li>Nvidia显卡请选择CUDA版本下载。</li>
+            <li>AMD显卡请查看下面的AMD显卡支持列表：
+                <ul>
+                    <li>如果在列表中，请选择ROCm版本下载。</li>
+                    <li>如果你是780m（7840hs/7940hs/8840hs/8845hs）核显的用户，请下载ROCm 版本 (780m专版)，此版本理论上支持任何2022年后的AMD GPU，但要求CPU支持AVX512，且不对任何非780m显卡的可用性负责。</li>
+                    <li>如果不在列表中，请选择Vulkan版本下载或手动编译，或尝试使用780m专版。</li>
+                </ul>
+            </li>
+            <li>注意，Vulkan版本现在还不支持IQ系列的量化。</li>
+            <li>llama.cpp会下载到程序所在的目录的llama文件夹内。</li>
+        </ol>
+        </body>
+        </html>
+        """)
+        description.setOpenExternalLinks(True)  # 允许打开外部链接
+        description.setTextFormat(Qt.RichText)
         description.setWordWrap(True)
+        description.setStyleSheet("""
+            QLabel {
+                border-radius: 5px;
+                padding: 15px;
+            }
+        """)
         layout.addWidget(description)
 
-        amd_support_list = """
-AMD显卡支持列表：
- - RX 7900 系列显卡
- - RX 7800 系列显卡
- - RX 7700 系列显卡
- - RX 6900/6800 系列显卡
- - RX 6700 系列显卡
-        """
         self.amd_support_label = QLabel(self)
-        self.amd_support_label.setText(amd_support_list)
+        self.amd_support_label.setText("""
+        <h4>AMD显卡支持列表：</h4>
+        <ul>
+            <li>RX 7900 系列显卡</li>
+            <li>RX 7800 系列显卡</li>
+            <li>RX 7700 系列显卡</li>
+            <li>RX 6900/6800 系列显卡</li>
+            <li>RX 6700 系列显卡</li>
+        </ul>
+        """)
+        self.amd_support_label.setTextFormat(Qt.RichText)
         self.amd_support_label.setWordWrap(True)
         layout.addWidget(self.amd_support_label)
 
@@ -1015,6 +1057,8 @@ AMD显卡支持列表：
                                "CUDA 版本", self.download_llamacpp)
         self.add_download_item(self.llamacpp_download_table,
                                "ROCm 版本 (感谢Sora维护)", self.download_llamacpp)
+        self.add_download_item(self.llamacpp_download_table,
+                               "ROCm 版本 (780m专版)", self.download_llamacpp)
         self.add_download_item(self.llamacpp_download_table,
                                "Vulkan 版本", self.download_llamacpp)
         layout.addWidget(self.llamacpp_download_table)
@@ -1042,8 +1086,8 @@ AMD显卡支持列表：
         table.setCellWidget(row, 1, download_button)
 
     def download_model(self, model_name):
-        if model_name == "Galtransl-7B-v2-IQ4_XS.gguf":
-            url = "https://hf-mirror.com/SakuraLLM/Galtransl-7B-v2/resolve/main/Galtransl-7B-v2-IQ4_XS.gguf"
+        if model_name == "GalTransl-7B-v2-IQ4_XS.gguf":
+            url = "https://hf-mirror.com/SakuraLLM/GalTransl-7B-v2/resolve/main/GalTransl-7B-v2-IQ4_XS.gguf"
         elif model_name == "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf":
             url = "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf"
         else:
@@ -1057,6 +1101,8 @@ AMD显卡支持列表：
             url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-cuda-cu12.2.0-x64.zip"
         elif version == "ROCm 版本 (感谢Sora维护)":
             url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-rocm-avx2-x64.zip"
+        elif version == "ROCm 版本 (780m专版)":
+            url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3534-bin-win-rocm-avx512-x64.zip"
         elif version == "Vulkan 版本":
             url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-vulkan-x64.zip"
         else:
@@ -1088,13 +1134,41 @@ AMD显卡支持列表：
 
     def on_download_finished(self):
         self.main_window.createSuccessInfoBar("下载完成", "文件已成功下载")
-        for file in os.listdir(CURRENT_DIR):
-            if file.endswith(".zip") and file.startswith("llama.cpp_"):
-                self.unzip_llamacpp(file)
-                self.main_window.createSuccessInfoBar("解压完成", "已经将llama.cpp解压到程序所在目录的llama文件夹内。")
-                os.remove(os.path.join(CURRENT_DIR, file))
-                break
+        
+        # 获取下载的文件名
+        downloaded_file = self.download_thread.filename
+        file_path = os.path.join(CURRENT_DIR, downloaded_file)
+        
+        # 检查是否为llama.cpp文件
+        if downloaded_file.startswith("llama.cpp_"):
+            self.unzip_llamacpp(downloaded_file)
+            self.main_window.createSuccessInfoBar("解压完成", "已经将llama.cpp解压到程序所在目录的llama文件夹内。")
+            os.remove(file_path)
+        else:
+            # 对模型文件进行SHA256校验
+            expected_sha256 = ""
+            if downloaded_file == "GalTransl-7B-v2-IQ4_XS.gguf":
+                expected_sha256 = "8749e704993a2c327f319278818ba0a7f9633eae8ed187d54eb63456a11812aa"
+            elif downloaded_file == "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf":
+                expected_sha256 = "254a7e97e5e2a5daa371145e55bb2b0a0a789615dab2d4316189ba089a3ced67"
             
+            if expected_sha256:
+                if self.check_sha256(file_path, expected_sha256):
+                    self.main_window.createSuccessInfoBar("校验成功", "文件SHA256校验通过。")
+                else:
+                    self.main_window.createWarningInfoBar("校验失败", "文件SHA256校验未通过，请重新下载。")
+                    os.remove(file_path)  # 删除校验失败的文件
+            else:
+                self.main_window.createWarningInfoBar("未校验", "无法为此文件执行SHA256校验。")
+
+    def check_sha256(self, filename, expected_sha256):
+        import hashlib
+        sha256_hash = hashlib.sha256()
+        with open(filename, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest() == expected_sha256
+
     def on_download_error(self, error_message):
         logger.error(f"Download error: {error_message}")
         QApplication.processEvents()  # 确保UI更新
@@ -1128,6 +1202,11 @@ class CFShareSection(RunSection):
         self.save_button.setFixedSize(110, 30)
         buttons_layout.addWidget(self.save_button)
 
+        self.refresh_slots_button = PushButton(FIF.SYNC, '刷新在线数量', self)
+        self.refresh_slots_button.clicked.connect(self.refresh_slots)
+        self.refresh_slots_button.setFixedSize(150, 30)
+        buttons_layout.addWidget(self.refresh_slots_button)
+
         buttons_layout.setAlignment(Qt.AlignRight)
         buttons_group.setStyleSheet(""" QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}""")
         buttons_group.setLayout(buttons_layout)
@@ -1139,6 +1218,9 @@ class CFShareSection(RunSection):
 
         self.status_label = QLabel("状态: 未运行")
         layout.addWidget(self.status_label)
+
+        self.slots_status_label = QLabel("在线slot数量: 未知")
+        layout.addWidget(self.slots_status_label)
 
         description = QLabel()
         description.setText("""
@@ -1205,7 +1287,7 @@ class CFShareSection(RunSection):
         cloudflared_path = get_resource_path(CLOUDFLARED)
         self.cloudflared_process = subprocess.Popen([cloudflared_path, "tunnel", "--url", f"http://localhost:{port}", "--metrics", "localhost:8081"])
         QTimer.singleShot(10000, self.check_tunnel_url)
-
+        QTimer.singleShot(15000, self.refresh_slots)  # 启动共享成功后5秒刷新在线slot数量
 
     def check_tunnel_url(self):
         try:
@@ -1319,9 +1401,27 @@ class CFShareSection(RunSection):
             return
         self.worker_url_input.setText(settings.get('worker_url', 'https://sakura-share.one'))
 
+    def refresh_slots(self):
+        worker_url = self.worker_url_input.text().strip()
+        if not worker_url:
+            self.slots_status_label.setText("在线slot数量: 获取失败 - WORKER_URL为空")
+            return
+        
+        try:
+            response = requests.get(f"{worker_url}/health")
+            data = response.json()
+            if data['status'] == "ok":
+                slots_idle = data.get('slots_idle', '未知')
+                slots_processing = data.get('slots_processing', '未知')
+                self.slots_status_label.setText(f"在线slot数量: 空闲 {slots_idle}, 处理中 {slots_processing}")
+            else:
+                self.slots_status_label.setText("在线slot数量: 获取失败")
+        except Exception as e:
+            self.slots_status_label.setText(f"在线slot数量: 获取失败 - {str(e)}")
+
 
 class SettingsSection(QFrame):
-    def __init__(self, title,main_window, parent=None):
+    def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
         self.setObjectName(title.replace(' ', '-'))
@@ -1339,6 +1439,10 @@ class SettingsSection(QFrame):
         self.model_search_paths.setPlaceholderText("模型搜索路径（每行一个路径，已经默认包含当前目录）")
         layout.addWidget(QLabel("模型搜索路径"))
         layout.addWidget(self.model_search_paths)
+
+        # 添加新的选项
+        self.remember_window_state = CheckBox("记住窗口位置和大小", self)
+        layout.addWidget(self.remember_window_state)
 
         self.save_button = PrimaryPushButton(FIF.SAVE, '保存设置', self)
         self.save_button.clicked.connect(self.save_settings)
@@ -1359,7 +1463,8 @@ class SettingsSection(QFrame):
     def save_settings(self):
         settings = {
             'llamacpp_path': self.llamacpp_path.text(),
-            'model_search_paths': self.model_search_paths.toPlainText().split('\n')
+            'model_search_paths': self.model_search_paths.toPlainText().split('\n'),
+            'remember_window_state': self.remember_window_state.isChecked()
         }
         if not os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -1384,6 +1489,7 @@ class SettingsSection(QFrame):
             return
         self.llamacpp_path.setText(settings.get('llamacpp_path', ''))
         self.model_search_paths.setPlainText('\n'.join(settings.get('model_search_paths', [])))
+        self.remember_window_state.setChecked(settings.get('remember_window_state', True))
 
 class AboutSection(QFrame):
     def __init__(self, text: str, parent=None):
@@ -1678,6 +1784,7 @@ class MainWindow(MSFluentWindow):
         cloudflared_path = get_resource_path(CLOUDFLARED)
         if not os.path.exists(cloudflared_path):
             MessageBox("错误", f"cloudflared 可执行文件不存在: {cloudflared_path}", self).exec()
+        self.load_window_state()
 
     def init_navigation(self):
         self.settings_section = SettingsSection("设置", self)
@@ -1874,6 +1981,7 @@ class MainWindow(MSFluentWindow):
         self.log_section.log_display.ensureCursorVisible()
 
     def closeEvent(self, event):
+        self.save_window_state()
         self.terminate_all_processes()
         event.accept()
 
@@ -1896,6 +2004,38 @@ class MainWindow(MSFluentWindow):
 
         if not self.gpu_manager.nvidia_gpus and not self.gpu_manager.amd_gpus:
             self.log_info("未检测到NVIDIA或AMD GPU")
+
+    def save_window_state(self):
+        if self.settings_section.remember_window_state.isChecked():
+            settings = {
+                'window_geometry': {
+                    'x': self.x(),
+                    'y': self.y(),
+                    'width': self.width(),
+                    'height': self.height()
+                }
+            }
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+            config_data.update(settings)
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=4)
+
+    def load_window_state(self):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+            if settings.get('remember_window_state', False):
+                geometry = settings.get('window_geometry', {})
+                if geometry:
+                    self.setGeometry(
+                        geometry.get('x', self.x()),
+                        geometry.get('y', self.y()),
+                        geometry.get('width', self.width()),
+                        geometry.get('height', self.height())
+                    )
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
 
 if __name__ == "__main__":
     setTheme(Theme.DARK)

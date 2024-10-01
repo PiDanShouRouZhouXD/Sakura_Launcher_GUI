@@ -2,3 +2,4 @@ PySide6==6.6.2
 PySide6-Fluent-Widgets[full]
 wmi
 requests
+py7zr

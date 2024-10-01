@@ -1103,8 +1103,10 @@ class DownloadSection(QFrame):
             expected_sha256 = ""
             if downloaded_file == "GalTransl-7B-v2-IQ4_XS.gguf":
                 expected_sha256 = "8749e704993a2c327f319278818ba0a7f9633eae8ed187d54eb63456a11812aa"
-            elif downloaded_file == "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf":
+            elif downloaded_file == "sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf":
                 expected_sha256 = "254a7e97e5e2a5daa371145e55bb2b0a0a789615dab2d4316189ba089a3ced67"
+            elif downloaded_file == "sakura-14b-qwen2beta-v0.9.2-q4km.gguf":
+                expected_sha256 = "8bae1ae35b7327fa7c3a8f3ae495b81a071847d560837de2025e1554364001a5"
 
             if expected_sha256:
                 if self.check_sha256(file_path, expected_sha256):

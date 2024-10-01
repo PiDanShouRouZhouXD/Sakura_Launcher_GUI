@@ -243,6 +243,18 @@ class RunSection(QFrame):
                 logging.debug(f"路径不存在: {path}")
 
         logging.debug(f"找到的模型文件: {models}")
+        
+        # 从设置中获取排序选项
+        sort_option = self.main_window.settings_section.model_sort_combo.currentText()
+        
+        # 根据选择的排序方式对模型列表进行排序
+        if sort_option == '修改时间':
+            models.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        elif sort_option == '文件名':
+            models.sort(key=lambda x: os.path.basename(x).lower())
+        elif sort_option == '文件大小':
+            models.sort(key=lambda x: os.path.getsize(x), reverse=True)
+        
         self.model_path.addItems(models)
 
     def refresh_gpus(self):
@@ -1493,9 +1505,15 @@ class SettingsSection(QFrame):
         layout.addWidget(QLabel("模型搜索路径"))
         layout.addWidget(self.model_search_paths)
 
-        # 添加新的选项
         self.remember_window_state = CheckBox("记住窗口位置和大小", self)
         layout.addWidget(self.remember_window_state)
+
+        # 添加模型排序设置
+        layout.addWidget(QLabel("模型列表排序方式:"))
+        self.model_sort_combo = ComboBox(self)
+        self.model_sort_combo.addItems(['修改时间', '文件名', '文件大小'])
+        self.model_sort_combo.currentIndexChanged.connect(self.save_settings)
+        layout.addWidget(self.model_sort_combo)
 
         self.save_button = PrimaryPushButton(FIF.SAVE, '保存设置', self)
         self.save_button.clicked.connect(self.save_settings)
@@ -1517,7 +1535,8 @@ class SettingsSection(QFrame):
         settings = {
             'llamacpp_path': self.llamacpp_path.text(),
             'model_search_paths': self.model_search_paths.toPlainText().split('\n'),
-            'remember_window_state': self.remember_window_state.isChecked()
+            'remember_window_state': self.remember_window_state.isChecked(),
+            'model_sort_option': self.model_sort_combo.currentText()
         }
         if not os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -1543,6 +1562,7 @@ class SettingsSection(QFrame):
         self.llamacpp_path.setText(settings.get('llamacpp_path', ''))
         self.model_search_paths.setPlainText('\n'.join(settings.get('model_search_paths', [])))
         self.remember_window_state.setChecked(settings.get('remember_window_state', True))
+        self.model_sort_combo.setCurrentText(settings.get('model_sort_option', '修改时间'))
 
 class AboutSection(QFrame):
     def __init__(self, text: str, parent=None):
@@ -1874,6 +1894,9 @@ class MainWindow(MSFluentWindow):
         self.run_bench_section.refresh_model_button.clicked.connect(self.run_bench_section.refresh_models)
         self.run_llamacpp_batch_bench_section.refresh_model_button.clicked.connect(self.run_llamacpp_batch_bench_section.refresh_models)
 
+        # 连接设置更改信号
+        self.settings_section.model_sort_combo.currentIndexChanged.connect(self.refresh_all_model_lists)
+
         self.setStyleSheet("""
             QLabel {
                 color: #dadada;
@@ -1896,6 +1919,11 @@ class MainWindow(MSFluentWindow):
         desktop = QApplication.screens()[0].availableGeometry()
         w, h = desktop.width(), desktop.height()
         self.move(w // 2 - self.width() // 2, h // 2 - self.height() // 2)
+
+    def refresh_all_model_lists(self):
+        self.run_server_section.refresh_models()
+        self.run_bench_section.refresh_models()
+        self.run_llamacpp_batch_bench_section.refresh_models()
 
     def createSuccessInfoBar(self, title, content):
         InfoBar.success(

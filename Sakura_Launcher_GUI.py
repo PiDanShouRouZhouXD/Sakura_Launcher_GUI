@@ -1,7 +1,6 @@
 from hashlib import sha256
 import sys
 import os
-import wmi
 import json
 import subprocess
 import logging
@@ -63,6 +62,7 @@ class GPUManager:
 
         # 检测AMD GPU
         try:
+            import wmi
             c = wmi.WMI()
             amd_gpus_temp = []
             for gpu in c.Win32_VideoController():
@@ -210,7 +210,7 @@ class RunSection(QFrame):
         check_box = CheckBox(text, self)
         check_box.setChecked(checked)
         return check_box
-    
+
     def _create_editable_combo_box(self, items):
         combo_box = EditableComboBox(self)
         combo_box.addItems(items)
@@ -239,7 +239,7 @@ class RunSection(QFrame):
                     logging.debug(f"路径不是目录: {path}")
             else:
                 logging.debug(f"路径不存在: {path}")
-        
+
         logging.debug(f"找到的模型文件: {models}")
         self.model_path.addItems(models)
 
@@ -247,15 +247,15 @@ class RunSection(QFrame):
         self.gpu_combo.clear()
         self.nvidia_gpus = self.main_window.gpu_manager.nvidia_gpus
         self.amd_gpus = self.main_window.gpu_manager.amd_gpus
-        
+
         # 优先添加NVIDIA GPU
         if self.nvidia_gpus:
             self.gpu_combo.addItems(self.nvidia_gpus)
-        
+
         # 如果有AMD GPU，添加到列表末尾
         if self.amd_gpus:
             self.gpu_combo.addItems(self.amd_gpus)
-        
+
         if not self.nvidia_gpus and not self.amd_gpus:
             logging.warning("未检测到NVIDIA或AMD GPU")
 
@@ -366,7 +366,7 @@ class RunServerSection(RunSection):
         self.context_length_input.valueChanged.connect(self.update_slider_from_input)
         self.context_length.valueChanged.connect(self.update_context_per_thread)
         self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
-        
+
         self.update_context_per_thread()
 
 
@@ -434,7 +434,7 @@ class RunServerSection(RunSection):
         if not os.path.exists(config_file_path):
             with open(config_file_path, 'w', encoding='utf-8') as f:
                 json.dump({}, f, ensure_ascii=False, indent=4)
-        
+
         with open(config_file_path, 'r', encoding='utf-8') as f:
             try:
                 current_settings = json.load(f)
@@ -601,7 +601,7 @@ class RunBenchmarkSection(RunSection):
         if not os.path.exists(config_file_path):
             with open(config_file_path, 'w', encoding='utf-8') as f:
                 json.dump({}, f, ensure_ascii=False, indent=4)
-        
+
         with open(config_file_path, 'r', encoding='utf-8') as f:
             try:
                 current_settings = json.load(f)
@@ -678,7 +678,7 @@ class RunBenchmarkSection(RunSection):
                 except json.JSONDecodeError:
                     return {}
         return {}
-        
+
 class RunBatchBenchmarkSection(RunSection):
     def __init__(self, title, main_window, parent=None):
         super().__init__(title, main_window, parent)
@@ -771,7 +771,7 @@ class RunBatchBenchmarkSection(RunSection):
         if not os.path.exists(config_file_path):
             with open(config_file_path, 'w', encoding='utf-8') as f:
                 json.dump({}, f, ensure_ascii=False, indent=4)
-        
+
         with open(config_file_path, 'r', encoding='utf-8') as f:
             try:
                 current_settings = json.load(f)
@@ -922,6 +922,18 @@ class DownloadThread(QThread):
             self.error.emit(str(e))
 
 class DownloadSection(QFrame):
+    model_links = [
+        ("GalTransl-7B-v2-IQ4_XS.gguf", "https://hf-mirror.com/SakuraLLM/GalTransl-7B-v2/resolve/main/GalTransl-7B-v2-IQ4_XS.gguf"),
+        ("sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf", "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf"),
+        ("sakura-14b-qwen2beta-v0.9.2-q4km.gguf", "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-q4km.gguf"),
+    ]
+    llamacpp_links = [
+        ("b3384-CUDA", "Nvidia独显", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-cuda-cu12.2.0-x64.zip"),
+        ("b3384-ROCm", "部分AMD独显", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-rocm-avx2-x64.zip"),
+        ("b3534-ROCm-780m", "部分AMD核显", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3534-bin-win-rocm-avx512-x64.zip"),
+        ("b3384-Vulkan", "通用", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-vulkan-x64.zip"),
+    ]
+
     def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
@@ -973,143 +985,85 @@ class DownloadSection(QFrame):
         self.pivot.setCurrentItem(widget.objectName())
 
     def init_model_download_section(self):
-        layout = QVBoxLayout(self.model_download_section)
+        table = self.create_download_table(['名称', '操作'])
+        for name, url in self.model_links:
+            row = table.rowCount()
+            table.insertRow(row)
+            table.setItem(row, 0, self.create_table_label(name))
+            download_fn = lambda: self.start_download(url, name)
+            table.setCellWidget(row, 1, self.create_table_button(download_fn))
 
-        # 添加说明性文字
-        description = QLabel()
-        description.setText("""
-        <html><body>
-        <h3>模型下载说明</h3>
-        <ul>
-        <li>您可以在这里下载不同版本的模型，或手动从<a href="https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/">Hugging Face</a>下载模型</li>
-        <li>8G以下显存推荐使用GalTransl-7B-v2-IQ4_XS.gguf</li>
-        <li>8G以上显存推荐使用Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf</li>
-        <li>模型会下载到程序所在的目录</li>
-        </ul>
-        </body></html>
+        description = self.create_description_label("""
+        <p>您可以在这里下载不同版本的模型，模型会保存到启动器所在的目录。您也可以手动从<a href="https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/">Hugging Face镜像站</a>下载模型。</p>
+        <p>12G以下显存推荐使用GalTransl-7B-v2-IQ4_XS.gguf</p>
+        <p>12G及以上显存推荐使用Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf</p>
         """)
-        description.setTextFormat(Qt.RichText)
-        description.setWordWrap(True)
-        description.setOpenExternalLinks(True)  # 允许打开外部链接
-        layout.addWidget(description)
 
-        self.model_download_table = self.create_download_table()
-        self.add_download_item(self.model_download_table,
-                               "GalTransl-7B-v2-IQ4_XS.gguf", self.download_model)
-        self.add_download_item(
-            self.model_download_table, "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf", self.download_model)
-        layout.addWidget(self.model_download_table)
+        layout = QVBoxLayout(self.model_download_section)
+        layout.addWidget(description)
+        layout.addWidget(table)
         self.model_download_section.setLayout(layout)
 
     def init_llamacpp_download_section(self):
+        table = self.create_download_table(['版本', '适合显卡', '下载'])
+        for version, gpu, url in self.llamacpp_links:
+            row = table.rowCount()
+            table.insertRow(row)
+            table.setItem(row, 0, self.create_table_label(version))
+            table.setItem(row, 1, self.create_table_label(gpu))
+            download_fn = lambda: self.start_download(url, f"llama.cpp_{version}.zip")
+            table.setCellWidget(row, 2, self.create_table_button(download_fn))
+
+        description = self.create_description_label("""
+        <p>您可以在这里下载不同版本的llama.cpp，文件会保存到启动器所在的目录。您也可以手动从<a href="https://github.com/ggerganov/llama.cpp/releases">GitHub发布页面</a>下载发行版。</p>
+        <p><b>ROCm支持的独显型号(感谢Sora维护)</b>
+            <ul>
+                <li>RX 7900 / 7800 / 7700系列显卡</li>
+                <li>RX 6900 / 6800 / 6700系列显卡</li>
+            </ul>
+        </p>
+        <p><b>ROCm-780m支持的核显型号</b>
+            <ul>
+                <li>7840hs/7940hs/8840hs/8845hs </li>
+                <li>理论上支持任何2022年后的AMD GPU，但要求CPU支持AVX512，且不对任何非780m显卡的可用性负责</li>
+            </ul>
+        </p>
+        <p>注意，Vulkan版本现在还不支持IQ系列的量化。</p>
+        """)
+
         layout = QVBoxLayout(self.llamacpp_download_section)
-
-        # 添加说明性文字
-        description = QLabel()
-        description.setText("""
-        <html>
-        <body>
-        <h3>说明</h3>
-        <p>您可以在这里下载不同版本的llama.cpp，或手动从<a href="https://github.com/ggerganov/llama.cpp/releases">GitHub发布页面</a>下载发行版。</p>
-        <ol>
-            <li>Nvidia显卡请选择CUDA版本下载。</li>
-            <li>AMD显卡请查看下面的AMD显卡支持列表：
-                <ul>
-                    <li>如果在列表中，请选择ROCm版本下载。</li>
-                    <li>如果你是780m（7840hs/7940hs/8840hs/8845hs）核显的用户，请下载ROCm 版本 (780m专版)，此版本理论上支持任何2022年后的AMD GPU，但要求CPU支持AVX512，且不对任何非780m显卡的可用性负责。</li>
-                    <li>如果不在列表中，请选择Vulkan版本下载或手动编译，或尝试使用780m专版。</li>
-                </ul>
-            </li>
-            <li>注意，Vulkan版本现在还不支持IQ系列的量化。</li>
-            <li>llama.cpp会下载到程序所在的目录的llama文件夹内。</li>
-        </ol>
-        </body>
-        </html>
-        """)
-        description.setOpenExternalLinks(True)  # 允许打开外部链接
-        description.setTextFormat(Qt.RichText)
-        description.setWordWrap(True)
-        description.setStyleSheet("""
-            QLabel {
-                border-radius: 5px;
-                padding: 15px;
-            }
-        """)
         layout.addWidget(description)
-
-        self.amd_support_label = QLabel(self)
-        self.amd_support_label.setText("""
-        <h4>AMD显卡支持列表：</h4>
-        <ul>
-            <li>RX 7900 系列显卡</li>
-            <li>RX 7800 系列显卡</li>
-            <li>RX 7700 系列显卡</li>
-            <li>RX 6900/6800 系列显卡</li>
-            <li>RX 6700 系列显卡</li>
-        </ul>
-        """)
-        self.amd_support_label.setTextFormat(Qt.RichText)
-        self.amd_support_label.setWordWrap(True)
-        layout.addWidget(self.amd_support_label)
-
-        self.llamacpp_download_table = self.create_download_table()
-        self.add_download_item(self.llamacpp_download_table,
-                               "CUDA 版本", self.download_llamacpp)
-        self.add_download_item(self.llamacpp_download_table,
-                               "ROCm 版本 (感谢Sora维护)", self.download_llamacpp)
-        self.add_download_item(self.llamacpp_download_table,
-                               "ROCm 版本 (780m专版)", self.download_llamacpp)
-        self.add_download_item(self.llamacpp_download_table,
-                               "Vulkan 版本", self.download_llamacpp)
-        layout.addWidget(self.llamacpp_download_table)
-
+        layout.addWidget(table)
         self.llamacpp_download_section.setLayout(layout)
 
-    def create_download_table(self):
+    def create_description_label(self, content):
+        description = QLabel()
+        description.setText(content)
+        description.setTextFormat(Qt.RichText)
+        description.setWordWrap(True)
+        description.setOpenExternalLinks(True)  # 允许打开外部链接
+        description.setMargin(16)
+        description.setTextInteractionFlags(Qt.TextSelectableByMouse|Qt.LinksAccessibleByMouse)
+        return description
+
+    def create_download_table(self, columns):
         table = TableWidget()
-        table.setColumnCount(2)
-        table.setHorizontalHeaderLabels(['名称', '操作'])
+        table.setColumnCount(len(columns))
+        table.setHorizontalHeaderLabels(columns)
         table.verticalHeader().hide()
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         table.horizontalHeader().setStretchLastSection(True)
         return table
 
-    def add_download_item(self, table, name, download_function):
-        row = table.rowCount()
-        table.insertRow(row)
+    def create_table_label(self, text):
+        item = QTableWidgetItem(text)
+        item.setFlags(Qt.ItemIsEnabled)
+        return item
 
-        name_item = QTableWidgetItem(name)
-        table.setItem(row, 0, name_item)
-
+    def create_table_button(self, download_function):
         download_button = TransparentPushButton(FIF.DOWNLOAD, "下载")
-        download_button.clicked.connect(lambda: download_function(name))
-        table.setCellWidget(row, 1, download_button)
-
-    def download_model(self, model_name):
-        if model_name == "GalTransl-7B-v2-IQ4_XS.gguf":
-            url = "https://hf-mirror.com/SakuraLLM/GalTransl-7B-v2/resolve/main/GalTransl-7B-v2-IQ4_XS.gguf"
-        elif model_name == "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf":
-            url = "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf"
-        else:
-            self.on_download_error("未知的模型名称")
-            return
-
-        self.start_download(url, model_name)
-
-    def download_llamacpp(self, version):
-        if version == "CUDA 版本":
-            url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-cuda-cu12.2.0-x64.zip"
-        elif version == "ROCm 版本 (感谢Sora维护)":
-            url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-rocm-avx2-x64.zip"
-        elif version == "ROCm 版本 (780m专版)":
-            url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3534-bin-win-rocm-avx512-x64.zip"
-        elif version == "Vulkan 版本":
-            url = "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-vulkan-x64.zip"
-        else:
-            self.on_download_error("未知的版本")
-            return
-
-        self.start_download(url, f"llama.cpp_{version}.zip")
+        download_button.clicked.connect(download_function)
+        return download_button
 
     def unzip_llamacpp(self, filename):
         import zipfile
@@ -1134,11 +1088,11 @@ class DownloadSection(QFrame):
 
     def on_download_finished(self):
         self.main_window.createSuccessInfoBar("下载完成", "文件已成功下载")
-        
+
         # 获取下载的文件名
         downloaded_file = self.download_thread.filename
         file_path = os.path.join(CURRENT_DIR, downloaded_file)
-        
+
         # 检查是否为llama.cpp文件
         if downloaded_file.startswith("llama.cpp_"):
             self.unzip_llamacpp(downloaded_file)
@@ -1151,7 +1105,7 @@ class DownloadSection(QFrame):
                 expected_sha256 = "8749e704993a2c327f319278818ba0a7f9633eae8ed187d54eb63456a11812aa"
             elif downloaded_file == "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf":
                 expected_sha256 = "254a7e97e5e2a5daa371145e55bb2b0a0a789615dab2d4316189ba089a3ced67"
-            
+
             if expected_sha256:
                 if self.check_sha256(file_path, expected_sha256):
                     self.main_window.createSuccessInfoBar("校验成功", "文件SHA256校验通过。")
@@ -1406,7 +1360,7 @@ class CFShareSection(RunSection):
         if not worker_url:
             self.slots_status_label.setText("在线slot数量: 获取失败 - WORKER_URL为空")
             return
-        
+
         try:
             response = requests.get(f"{worker_url}/health")
             data = response.json()
@@ -1498,8 +1452,8 @@ class AboutSection(QFrame):
         self.init_ui()
 
     def init_ui(self):
-        
-        
+
+
         # 文本
         text_group = QGroupBox()
         text_group.setStyleSheet(""" QGroupBox {border: 0px solid lightgray; border-radius: 8px;}""")
@@ -1570,11 +1524,11 @@ class ConfigEditor(QFrame):
         self.pivot = SegmentedWidget(self)
         self.stacked_widget = QStackedWidget(self)
         self.layout = QVBoxLayout(self)
-        
+
         self.run_server_section = QWidget(self)
         self.run_bench_section = QWidget(self)
         self.run_batch_bench_section = QWidget(self)  # New section for batch bench
-        
+
         self.init_run_server_section()
         self.init_run_bench_section()
         self.init_run_batch_bench_section()  # Initialize the new section
@@ -1796,7 +1750,7 @@ class MainWindow(MSFluentWindow):
         self.config_editor_section = ConfigEditor("配置编辑", self)
         self.dowload_section = DownloadSection("下载", self)
         self.cf_share_section = CFShareSection("共享", self)
-    
+
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
         self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
@@ -1820,7 +1774,7 @@ class MainWindow(MSFluentWindow):
         self.run_server_section.refresh_model_button.clicked.connect(self.run_server_section.refresh_models)
         self.run_bench_section.refresh_model_button.clicked.connect(self.run_bench_section.refresh_models)
         self.run_llamacpp_batch_bench_section.refresh_model_button.clicked.connect(self.run_llamacpp_batch_bench_section.refresh_models)
-        
+
         self.setStyleSheet("""
             QLabel {
                 color: #dadada;
@@ -1829,7 +1783,7 @@ class MainWindow(MSFluentWindow):
             CheckBox {
                 color: #dadada;
             }
-                           
+
             AcrylicWindow{
                 background-color: #272727;
             }
@@ -1950,7 +1904,7 @@ class MainWindow(MSFluentWindow):
             selected_gpu = section.gpu_combo.currentText()
             selected_index = section.gpu_combo.currentIndex()
             manual_index = section.manully_select_gpu_index.text()
-            
+
             try:
                 self.gpu_manager.set_gpu_env(selected_gpu, selected_index, manual_index)
             except Exception as e:

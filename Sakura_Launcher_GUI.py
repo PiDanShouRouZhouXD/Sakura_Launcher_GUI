@@ -11,6 +11,7 @@ import time
 import threading
 import zipfile
 import py7zr
+import shutil
 from enum import Enum
 from functools import partial
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QThread
@@ -988,7 +989,7 @@ class DownloadSection(QFrame):
         ("b3855-CUDA", "Nvidia独显", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3855-bin-win-cuda-cu12.2.0-x64.7z"),
         ("b3384-ROCm", "部分AMD独显", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-rocm-avx2-x64.zip"),
         ("b3534-ROCm-780m", "部分AMD核显", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3534-bin-win-rocm-avx512-x64.zip"),
-        ("b3855-Vulkan", "通用", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3855-bin-win-vulkan-x64.zip"),
+        ("b3855-Vulkan", "通用，不推荐", "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3855-bin-win-vulkan-x64.zip"),
     ]
 
     def __init__(self, title, main_window, parent=None):
@@ -1097,7 +1098,9 @@ class DownloadSection(QFrame):
                 <li>理论上支持任何2022年后的AMD GPU，但要求CPU支持AVX512，且不对任何非780m显卡的可用性负责</li>
             </ul>
         </p>
-        <p>注意，Vulkan版本现在还不支持IQ系列的量化。</p>
+        <p><b>注意：</b></p>
+        <p>最新CUDA版本不包含cudart，如果你不知道这是什么，请不要下载最新CUDA版本</p>
+        <p>Vulkan版本现在还不支持IQ系列的量化。</p>
         """)
 
         layout = QVBoxLayout(self.llamacpp_download_section)
@@ -1237,7 +1240,28 @@ class DownloadSection(QFrame):
         MessageBox("错误", f"下载失败: {error_message}", self).exec()
 
     def get_latest_cuda_release(self):
-        return None
+        try:
+            # 发送请求到最新release页面
+            response = requests.get('https://github.com/ggerganov/llama.cpp/releases/latest', allow_redirects=False)
+            
+            # 从重定向URL中提取版本号
+            if response.status_code == 302:
+                redirect_url = response.headers.get('Location')
+                version = redirect_url.split('/')[-1]
+                
+                # 构造下载URL
+                download_url = f'https://github.com/ggerganov/llama.cpp/releases/download/{version}/llama-{version}-bin-win-cuda-cu12.2.0-x64.zip'
+                
+                return {
+                    'name': f'llama-{version}-bin-win-cuda-cu12.2.0-x64.zip',
+                    'url': download_url
+                }
+            else:
+                self.main_window.log_info("无法获取最新版本信息")
+                return None
+        except Exception as e:
+            self.main_window.log_info(f"获取最新CUDA版本时出错: {str(e)}")
+            return None
 
 class CFShareSection(RunSection):
     def __init__(self, title, main_window, parent=None):
@@ -1512,7 +1536,6 @@ class SettingsSection(QFrame):
         layout.addWidget(QLabel("模型列表排序方式:"))
         self.model_sort_combo = ComboBox(self)
         self.model_sort_combo.addItems(['修改时间', '文件名', '文件大小'])
-        self.model_sort_combo.currentIndexChanged.connect(self.save_settings)
         layout.addWidget(self.model_sort_combo)
 
         self.save_button = PrimaryPushButton(FIF.SAVE, '保存设置', self)
@@ -2041,12 +2064,21 @@ class MainWindow(MSFluentWindow):
 
         self.log_info(f"执行命令: {command}")
 
+        # 在运行命令的部分
         if sys.platform == 'win32':
             command = f'start cmd /K "{command}"'
             subprocess.Popen(command, shell=True)
         else:
-            command = f'x-terminal-emulator -e "{command}"'
-            subprocess.Popen(command, shell=True)
+            terminal = self.find_terminal()
+            if terminal:
+                if terminal == 'gnome-terminal':
+                    subprocess.Popen([terminal, '--', 'bash', '-c', command])
+                else:
+                    subprocess.Popen([terminal, '-e', command])
+            else:
+                MessageBox("错误", "无法找到合适的终端模拟器。请手动运行命令。", self).exec()
+                self.log_info(f"请手动运行以下命令：\n{command}")
+                return
 
         self.log_info("命令已在新的终端窗口中启动。")
 
@@ -2056,6 +2088,19 @@ class MainWindow(MSFluentWindow):
                 MessageBox("错误", "分享链接不能为空", self).exec()
                 return
             QTimer.singleShot(25000, self.cf_share_section.start_cf_share)
+
+    def find_terminal(self):
+        terminals = [
+            'x-terminal-emulator',
+            'gnome-terminal',
+            'konsole',
+            'xfce4-terminal',
+            'xterm'
+        ]
+        for term in terminals:
+            if shutil.which(term):
+                return term
+        return None
 
     def log_info(self, message):
         self.log_section.log_display.append(message)

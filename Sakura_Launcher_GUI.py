@@ -1,7 +1,6 @@
 from hashlib import sha256
 import sys
 import os
-import wmi
 import json
 import subprocess
 import logging
@@ -63,6 +62,7 @@ class GPUManager:
 
         # 检测AMD GPU
         try:
+            import wmi
             c = wmi.WMI()
             amd_gpus_temp = []
             for gpu in c.Win32_VideoController():
@@ -210,7 +210,7 @@ class RunSection(QFrame):
         check_box = CheckBox(text, self)
         check_box.setChecked(checked)
         return check_box
-    
+
     def _create_editable_combo_box(self, items):
         combo_box = EditableComboBox(self)
         combo_box.addItems(items)
@@ -239,7 +239,7 @@ class RunSection(QFrame):
                     logging.debug(f"路径不是目录: {path}")
             else:
                 logging.debug(f"路径不存在: {path}")
-        
+
         logging.debug(f"找到的模型文件: {models}")
         self.model_path.addItems(models)
 
@@ -247,15 +247,15 @@ class RunSection(QFrame):
         self.gpu_combo.clear()
         self.nvidia_gpus = self.main_window.gpu_manager.nvidia_gpus
         self.amd_gpus = self.main_window.gpu_manager.amd_gpus
-        
+
         # 优先添加NVIDIA GPU
         if self.nvidia_gpus:
             self.gpu_combo.addItems(self.nvidia_gpus)
-        
+
         # 如果有AMD GPU，添加到列表末尾
         if self.amd_gpus:
             self.gpu_combo.addItems(self.amd_gpus)
-        
+
         if not self.nvidia_gpus and not self.amd_gpus:
             logging.warning("未检测到NVIDIA或AMD GPU")
 
@@ -366,7 +366,7 @@ class RunServerSection(RunSection):
         self.context_length_input.valueChanged.connect(self.update_slider_from_input)
         self.context_length.valueChanged.connect(self.update_context_per_thread)
         self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
-        
+
         self.update_context_per_thread()
 
 
@@ -434,7 +434,7 @@ class RunServerSection(RunSection):
         if not os.path.exists(config_file_path):
             with open(config_file_path, 'w', encoding='utf-8') as f:
                 json.dump({}, f, ensure_ascii=False, indent=4)
-        
+
         with open(config_file_path, 'r', encoding='utf-8') as f:
             try:
                 current_settings = json.load(f)
@@ -601,7 +601,7 @@ class RunBenchmarkSection(RunSection):
         if not os.path.exists(config_file_path):
             with open(config_file_path, 'w', encoding='utf-8') as f:
                 json.dump({}, f, ensure_ascii=False, indent=4)
-        
+
         with open(config_file_path, 'r', encoding='utf-8') as f:
             try:
                 current_settings = json.load(f)
@@ -678,7 +678,7 @@ class RunBenchmarkSection(RunSection):
                 except json.JSONDecodeError:
                     return {}
         return {}
-        
+
 class RunBatchBenchmarkSection(RunSection):
     def __init__(self, title, main_window, parent=None):
         super().__init__(title, main_window, parent)
@@ -771,7 +771,7 @@ class RunBatchBenchmarkSection(RunSection):
         if not os.path.exists(config_file_path):
             with open(config_file_path, 'w', encoding='utf-8') as f:
                 json.dump({}, f, ensure_ascii=False, indent=4)
-        
+
         with open(config_file_path, 'r', encoding='utf-8') as f:
             try:
                 current_settings = json.load(f)
@@ -1134,11 +1134,11 @@ class DownloadSection(QFrame):
 
     def on_download_finished(self):
         self.main_window.createSuccessInfoBar("下载完成", "文件已成功下载")
-        
+
         # 获取下载的文件名
         downloaded_file = self.download_thread.filename
         file_path = os.path.join(CURRENT_DIR, downloaded_file)
-        
+
         # 检查是否为llama.cpp文件
         if downloaded_file.startswith("llama.cpp_"):
             self.unzip_llamacpp(downloaded_file)
@@ -1151,7 +1151,7 @@ class DownloadSection(QFrame):
                 expected_sha256 = "8749e704993a2c327f319278818ba0a7f9633eae8ed187d54eb63456a11812aa"
             elif downloaded_file == "Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf":
                 expected_sha256 = "254a7e97e5e2a5daa371145e55bb2b0a0a789615dab2d4316189ba089a3ced67"
-            
+
             if expected_sha256:
                 if self.check_sha256(file_path, expected_sha256):
                     self.main_window.createSuccessInfoBar("校验成功", "文件SHA256校验通过。")
@@ -1406,7 +1406,7 @@ class CFShareSection(RunSection):
         if not worker_url:
             self.slots_status_label.setText("在线slot数量: 获取失败 - WORKER_URL为空")
             return
-        
+
         try:
             response = requests.get(f"{worker_url}/health")
             data = response.json()
@@ -1498,8 +1498,8 @@ class AboutSection(QFrame):
         self.init_ui()
 
     def init_ui(self):
-        
-        
+
+
         # 文本
         text_group = QGroupBox()
         text_group.setStyleSheet(""" QGroupBox {border: 0px solid lightgray; border-radius: 8px;}""")
@@ -1570,11 +1570,11 @@ class ConfigEditor(QFrame):
         self.pivot = SegmentedWidget(self)
         self.stacked_widget = QStackedWidget(self)
         self.layout = QVBoxLayout(self)
-        
+
         self.run_server_section = QWidget(self)
         self.run_bench_section = QWidget(self)
         self.run_batch_bench_section = QWidget(self)  # New section for batch bench
-        
+
         self.init_run_server_section()
         self.init_run_bench_section()
         self.init_run_batch_bench_section()  # Initialize the new section
@@ -1796,7 +1796,7 @@ class MainWindow(MSFluentWindow):
         self.config_editor_section = ConfigEditor("配置编辑", self)
         self.dowload_section = DownloadSection("下载", self)
         self.cf_share_section = CFShareSection("共享", self)
-    
+
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
         self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
@@ -1820,7 +1820,7 @@ class MainWindow(MSFluentWindow):
         self.run_server_section.refresh_model_button.clicked.connect(self.run_server_section.refresh_models)
         self.run_bench_section.refresh_model_button.clicked.connect(self.run_bench_section.refresh_models)
         self.run_llamacpp_batch_bench_section.refresh_model_button.clicked.connect(self.run_llamacpp_batch_bench_section.refresh_models)
-        
+
         self.setStyleSheet("""
             QLabel {
                 color: #dadada;
@@ -1829,7 +1829,7 @@ class MainWindow(MSFluentWindow):
             CheckBox {
                 color: #dadada;
             }
-                           
+
             AcrylicWindow{
                 background-color: #272727;
             }
@@ -1950,7 +1950,7 @@ class MainWindow(MSFluentWindow):
             selected_gpu = section.gpu_combo.currentText()
             selected_index = section.gpu_combo.currentIndex()
             manual_index = section.manully_select_gpu_index.text()
-            
+
             try:
                 self.gpu_manager.set_gpu_env(selected_gpu, selected_index, manual_index)
             except Exception as e:

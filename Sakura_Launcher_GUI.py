@@ -929,7 +929,7 @@ class DownloadThread(QThread):
             block_size = 1024  # 1 KB
             downloaded_size = 0
 
-            file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.filename)
+            file_path = os.path.join(get_self_path(), self.filename)
             with open(file_path, 'wb') as file:
                 for data in response.iter_content(block_size):
                     size = file.write(data)
@@ -960,14 +960,17 @@ class DownloadThread(QThread):
         self.main_window.log_info("正在断开下载线程的所有信号连接")
         try:
             self.progress.disconnect()
+            self.main_window.log_info("断开 progress 信号")
         except TypeError:
             pass
         try:
             self.finished.disconnect()
+            self.main_window.log_info("断开 finished 信号")
         except TypeError:
             pass
         try:
             self.error.disconnect()
+            self.main_window.log_info("断开 error 信号")
         except TypeError:
             pass
         self.main_window.log_info("下载线程的所有信号已断开")
@@ -1066,13 +1069,12 @@ class DownloadSection(QFrame):
         table = self.create_download_table(['版本', '适合显卡', '下载'])
         # 添加GitHub最新CUDA版本选项
         latest_cuda = self.get_latest_cuda_release()
-        print(latest_cuda)
         if latest_cuda:
             row = table.rowCount()
             table.insertRow(row)
             table.setItem(row, 0, self.create_table_label(f"最新CUDA版本 ({latest_cuda['name']})"))
             table.setItem(row, 1, self.create_table_label("Nvidia独显"))
-            download_fn = lambda: self.start_download(latest_cuda['url'], latest_cuda['name'])
+            download_fn = lambda url=latest_cuda['url'], name=latest_cuda['name']: self.start_download(url, name)
             table.setCellWidget(row, 2, self.create_table_button(download_fn))
         
         # 添加现有的下载选项
@@ -1081,7 +1083,9 @@ class DownloadSection(QFrame):
             table.insertRow(row)
             table.setItem(row, 0, self.create_table_label(version))
             table.setItem(row, 1, self.create_table_label(gpu))
-            download_fn = lambda: self.start_download(url, f"llama.cpp_{version}.zip")
+            # 从 URL 中提取文件名
+            filename = url.split('/')[-1]
+            download_fn = lambda url=url, filename=filename: self.start_download(url, filename)
             table.setCellWidget(row, 2, self.create_table_button(download_fn))
 
         description = self.create_description_label("""
@@ -1160,25 +1164,29 @@ class DownloadSection(QFrame):
 
     # 直接使用requests下载
     def start_download(self, url, filename):
+        self.main_window.log_info(f"开始下载: URL={url}, 文件名={filename}")
+
         # 重置下载状态
         if hasattr(self, '_download_processed'):
             delattr(self, '_download_processed')
         
+        # 确保旧的下载线程已经停止并且信号已经断开
         if hasattr(self, 'download_thread'):
             self.download_thread.safe_disconnect()
+            self.download_thread.wait()  # 等待线程完全停止
         
         self.download_thread = DownloadThread(url, filename, self.main_window)
         
-        # 连接信号
-        self.download_thread.progress.connect(self.global_progress_bar.setValue)
-        self.download_thread.finished.connect(self.on_download_finished)
-        self.download_thread.error.connect(self.on_download_error)
+        # 连接信号，使用 Qt.UniqueConnection 确保只连接一次
+        self.download_thread.progress.connect(self.global_progress_bar.setValue, Qt.UniqueConnection)
+        self.download_thread.finished.connect(self.on_download_finished, Qt.UniqueConnection)
+        self.download_thread.error.connect(self.on_download_error, Qt.UniqueConnection)
         
         self.download_thread.start()
         self.main_window.createSuccessInfoBar("下载中", "文件正在下载，请耐心等待，下载进度请关注最下方的进度条。")
 
     def on_download_finished(self):
-        if hasattr(self, '_download_processed'):
+        if hasattr(self, '_download_processed') and self._download_processed:
             self.main_window.log_info("下载已经处理过，跳过重复处理")
             return
 
@@ -1224,7 +1232,8 @@ class DownloadSection(QFrame):
             else:
                 self.main_window.createWarningInfoBar("未校验", "无法为此文件执行SHA256校验。")
         
-        delattr(self, '_download_processed')
+        # 不要删除标志，以防止重复处理
+        # delattr(self, '_download_processed')
 
     def check_sha256(self, filename, expected_sha256):
         import hashlib

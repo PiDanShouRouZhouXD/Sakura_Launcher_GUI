@@ -38,7 +38,7 @@ CURRENT_DIR = get_self_path()
 CONFIG_FILE = 'sakura-launcher_config.json'
 ICON_FILE = 'icon.png'
 CLOUDFLARED = 'cloudflared-windows-amd64.exe'
-SAKURA_LAUNCHER_GUI_VERSION = '0.0.7-beta'
+SAKURA_LAUNCHER_GUI_VERSION = '0.0.8-beta'
 
 processes = []
 
@@ -1272,11 +1272,91 @@ class DownloadSection(QFrame):
             self.main_window.log_info(f"获取最新CUDA版本时出错: {str(e)}")
             return None
 
+class CFShareWorker(QThread):
+    tunnel_url_found = Signal(str)
+    error_occurred = Signal(str)
+    health_check_failed = Signal()
+    metrics_updated = Signal(dict)
+
+    def __init__(self, port, worker_url):
+        super().__init__()
+        self.port = port
+        self.worker_url = worker_url
+        self.cloudflared_process = None
+        self.tunnel_url = None
+        self.is_running = False
+
+    def run(self):
+        self.is_running = True
+        cloudflared_path = get_resource_path(CLOUDFLARED)
+        self.cloudflared_process = subprocess.Popen([cloudflared_path, "tunnel", "--url", f"http://localhost:{self.port}", "--metrics", "localhost:8081"])
+        
+        # Wait for tunnel URL
+        time.sleep(10)
+        self.check_tunnel_url()
+
+        # Start health check and metrics update
+        while self.is_running:
+            if not self.check_local_health_status():
+                self.health_check_failed.emit()
+                break
+            self.update_metrics()
+            time.sleep(5)
+
+    def check_tunnel_url(self):
+        try:
+            metrics_response = requests.get("http://localhost:8081/metrics")
+            tunnel_url_match = re.search(r'(https://.*?\.trycloudflare\.com)', metrics_response.text)
+            if tunnel_url_match:
+                self.tunnel_url = tunnel_url_match.group(1)
+                self.tunnel_url_found.emit(self.tunnel_url)
+            else:
+                self.error_occurred.emit("Failed to get tunnel URL")
+        except Exception as e:
+            self.error_occurred.emit(f"Error checking tunnel URL: {str(e)}")
+
+    def check_local_health_status(self):
+        health_url = f"http://localhost:{self.port}/health"
+        try:
+            response = requests.get(health_url)
+            data = response.json()
+            return data['status'] in ["ok", "no slot available"]
+        except Exception:
+            return False
+
+    def update_metrics(self):
+        try:
+            response = requests.get(f"http://localhost:{self.port}/metrics")
+            metrics = self.parse_metrics(response.text)
+            self.metrics_updated.emit(metrics)
+        except Exception as e:
+            self.error_occurred.emit(f"Error updating metrics: {str(e)}")
+
+    def parse_metrics(self, metrics_text):
+        metrics = {}
+        for line in metrics_text.split('\n'):
+            if line.startswith('#') or not line.strip():
+                continue
+            key, value = line.split(' ')
+            metrics[key.split(':')[-1]] = float(value)
+        return metrics
+
+    def stop(self):
+        self.is_running = False
+        if self.cloudflared_process:
+            self.cloudflared_process.terminate()
+            try:
+                self.cloudflared_process.wait(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                self.cloudflared_process.kill()
+            self.cloudflared_process = None
+
 class CFShareSection(RunSection):
     def __init__(self, title, main_window, parent=None):
         super().__init__(title, main_window, parent)
         self._init_ui()
         self.load_settings()
+        self.worker = None
 
     def _init_ui(self):
         layout = QVBoxLayout()
@@ -1319,6 +1399,45 @@ class CFShareSection(RunSection):
 
         self.slots_status_label = QLabel("在线slot数量: 未知")
         layout.addWidget(self.slots_status_label)
+
+        # 更新指标
+        self.metrics_labels = {
+            'prompt_tokens_total': QLabel("提示词 tokens 总数: 暂无数据"),
+            'prompt_seconds_total': QLabel("提示词处理总时间: 暂无数据"),
+            'tokens_predicted_total': QLabel("生成的 tokens 总数: 暂无数据"),
+            'tokens_predicted_seconds_total': QLabel("生成处理总时间: 暂无数据"),
+            'n_decode_total': QLabel("llama_decode() 调用总次数: 暂无数据"),
+            'n_busy_slots_per_decode': QLabel("每次 llama_decode() 调用的平均忙碌槽位数: 暂无数据"),
+            'prompt_tokens_seconds': QLabel("提示词平均吞吐量: 暂无数据"),
+            'predicted_tokens_seconds': QLabel("生成平均吞吐量: 暂无数据"),
+            'kv_cache_usage_ratio': QLabel("KV-cache 使用率: 暂无数据"),
+            'kv_cache_tokens': QLabel("KV-cache tokens: 暂无数据"),
+            'requests_processing': QLabel("正在处理的请求数: 暂无数据"),
+            'requests_deferred': QLabel("延迟的请求数: 暂无数据")
+        }
+
+        tooltips = {
+            'prompt_tokens_total': "已处理的提示词 tokens 总数",
+            'prompt_seconds_total': "提示词处理的总时间",
+            'tokens_predicted_total': "已生成的 tokens 总数",
+            'tokens_predicted_seconds_total': "生成处理的总时间",
+            'n_decode_total': "llama_decode() 函数的总调用次数",
+            'n_busy_slots_per_decode': "每次 llama_decode() 调用时的平均忙碌槽位数",
+            'prompt_tokens_seconds': "提示词的平均处理速度",
+            'predicted_tokens_seconds': "生成的平均速度",
+            'kv_cache_usage_ratio': "KV-cache 的使用率（1 表示 100% 使用）",
+            'kv_cache_tokens': "KV-cache 中的 token 数量",
+            'requests_processing': "当前正在处理的请求数",
+            'requests_deferred': "被延迟的请求数"
+        }
+
+        metrics_title = QLabel("\n数据统计")
+        metrics_title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        layout.addWidget(metrics_title)
+
+        for key, label in self.metrics_labels.items():
+            label.setToolTip(tooltips[key])
+            layout.addWidget(label)
 
         description = QLabel()
         description.setText("""
@@ -1367,104 +1486,49 @@ class CFShareSection(RunSection):
 
         self.setLayout(layout)
 
-        self.cloudflared_process = None
-        self.health_thread = None
-        self.tunnel_url = None
-
+    @Slot()
     def start_cf_share(self):
         worker_url = self.worker_url_input.text().strip()
         if not worker_url:
-            MessageBox("错误", "请输入WORKER_URL", self).exec()
+            MessageBox("错误", "请输入WORKER_URL", self).exec_()
+            return
         port = self.main_window.run_server_section.port_input.text().strip()
         if not port:
-            MessageBox("错误", "请在运行server面板中设置端口号", self).exec()
-        is_healthy = self.check_local_health_status()
-        if not is_healthy:
-            MessageBox("错误", "本地服务未启动或未正常运行，请先启动本地服务", self).exec()
-        self.worker_url = worker_url
-        cloudflared_path = get_resource_path(CLOUDFLARED)
-        self.cloudflared_process = subprocess.Popen([cloudflared_path, "tunnel", "--url", f"http://localhost:{port}", "--metrics", "localhost:8081"])
-        QTimer.singleShot(10000, self.check_tunnel_url)
-        QTimer.singleShot(15000, self.refresh_slots)  # 启动共享成功后5秒刷新在线slot数量
+            MessageBox("错误", "请在运行server面板中设置端口号", self).exec_()
+            return
+        if not self.check_local_health_status():
+            MessageBox("错误", "本地服务未启动或未正常运行，请先启动本地服务", self).exec_()
+            return
 
-    def check_tunnel_url(self):
-        try:
-            metrics_response = requests.get("http://localhost:8081/metrics")
-            tunnel_url_match = re.search(r'(https://.*?\.trycloudflare\.com)', metrics_response.text)
-            if tunnel_url_match:
-                self.tunnel_url = tunnel_url_match.group(1)
-                self.main_window.log_info(f"Tunnel URL: {self.tunnel_url}")
-                self.register_node()
-                self.start_health_check()
-                self.status_label.setText(f"状态: 运行中 - {self.tunnel_url}")
-                self.start_button.setEnabled(False)
-                self.stop_button.setEnabled(True)
-                self.main_window.createSuccessInfoBar("成功", "已经成功启动分享。")
-            else:
-                self.main_window.log_info("Failed to get tunnel URL")
-                self.stop_cf_share()
-        except Exception as e:
-            self.main_window.log_info(f"Error checking tunnel URL: {str(e)}")
-            self.stop_cf_share()
+        self.worker = CFShareWorker(port, worker_url)
+        self.worker.tunnel_url_found.connect(self.on_tunnel_url_found)
+        self.worker.error_occurred.connect(self.on_error)
+        self.worker.health_check_failed.connect(self.stop_cf_share)
+        self.worker.metrics_updated.connect(self.update_metrics_display)
+        self.worker.start()
 
-    def register_node(self):
-        try:
-            api_response = requests.post(
-                f"{self.worker_url}/register-node",
-                json={"url": self.tunnel_url},
-                headers={"Content-Type": "application/json"}
-            )
-            self.main_window.log_info(f"API Response: {api_response.text}")
-        except Exception as e:
-            self.main_window.log_info(f"Error registering node: {str(e)}")
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
 
-    def start_health_check(self):
-        self.health_thread = threading.Thread(target=self.health_check)
-        self.health_thread.start()
+    @Slot(str)
+    def on_tunnel_url_found(self, tunnel_url):
+        self.tunnel_url = tunnel_url
+        self.main_window.log_info(f"Tunnel URL: {self.tunnel_url}")
+        self.register_node()
+        self.status_label.setText(f"状态: 运行中 - {self.tunnel_url}")
+        self.main_window.createSuccessInfoBar("成功", "已经成功启动分享。")
 
-    def health_check(self):
-        while self.cloudflared_process and self.cloudflared_process.poll() is None:
-            if not self.check_local_health_status():
-                self.main_window.log_info("Local service is not healthy. Taking node offline.")
-                self.take_node_offline()
-                self.stop_cf_share()
-                break
-            time.sleep(5)
+    @Slot(str)
+    def on_error(self, error_message):
+        self.main_window.log_info(error_message)
+        self.stop_cf_share()
 
-    def check_local_health_status(self):
-        port = self.main_window.run_server_section.port_input.text().strip()
-        health_url = f"http://localhost:{port}/health"
-        try:
-            response = requests.get(health_url)
-            data = response.json()
-            if data['status'] in ["ok", "no slot available"]:
-                return True
-            else:
-                self.main_window.log_info(f"Local health status: Not healthy - {data['status']}")
-                return False
-        except Exception as e:
-            self.main_window.log_info(f"Error checking local health status: {str(e)}")
-            return False
-
-    def take_node_offline(self):
-        try:
-            offline_response = requests.post(
-                f"{self.worker_url}/delete-node",
-                json={"url": self.tunnel_url},
-                headers={"Content-Type": "application/json"}
-            )
-            self.main_window.log_info(f"Offline Response: {offline_response.text}")
-        except Exception as e:
-            self.main_window.log_info(f"Error taking node offline: {str(e)}")
-
+    @Slot()
     def stop_cf_share(self):
-        if self.cloudflared_process:
-            self.cloudflared_process.terminate()
-            try:
-                self.cloudflared_process.wait(timeout=0.2)  # 等待最多0.2秒
-            except subprocess.TimeoutExpired:
-                self.cloudflared_process.kill()  # 如果进程没有在5秒内终止，强制结束它
-            self.cloudflared_process = None
+        if self.worker:
+            self.worker.stop()
+            self.worker.wait()
+            self.worker = None
 
         if self.tunnel_url:
             self.take_node_offline()
@@ -1473,6 +1537,18 @@ class CFShareSection(RunSection):
         self.status_label.setText("状态: 未运行")
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
+
+    @Slot(dict)
+    def update_metrics_display(self, metrics):
+        for key, label in self.metrics_labels.items():
+            if key in metrics:
+                value = metrics[key]
+                if key in ['prompt_tokens_total', 'tokens_predicted_total', 'n_decode_total', 'kv_cache_tokens', 'requests_processing', 'requests_deferred']:
+                    label.setText(f"{label.text().split(':')[0]}: {value:.0f}")
+                elif key == 'kv_cache_usage_ratio':
+                    label.setText(f"{label.text().split(':')[0]}: {value*100:.2f}%")
+                else:
+                    label.setText(f"{label.text().split(':')[0]}: {value:.2f}")
 
     def save_settings(self):
         settings = {
@@ -1516,6 +1592,43 @@ class CFShareSection(RunSection):
                 self.slots_status_label.setText("在线slot数量: 获取失败")
         except Exception as e:
             self.slots_status_label.setText(f"在线slot数量: 获取失败 - {str(e)}")
+
+    def check_local_health_status(self):
+        port = self.main_window.run_server_section.port_input.text().strip()
+        health_url = f"http://localhost:{port}/health"
+        try:
+            response = requests.get(health_url)
+            data = response.json()
+            if data['status'] in ["ok", "no slot available"]:
+                return True
+            else:
+                self.main_window.log_info(f"Local health status: Not healthy - {data['status']}")
+                return False
+        except Exception as e:
+            self.main_window.log_info(f"Error checking local health status: {str(e)}")
+            return False
+
+    def register_node(self):
+        try:
+            api_response = requests.post(
+                f"{self.worker.worker_url}/register-node",
+                json={"url": self.tunnel_url},
+                headers={"Content-Type": "application/json"}
+            )
+            self.main_window.log_info(f"API Response: {api_response.text}")
+        except Exception as e:
+            self.main_window.log_info(f"Error registering node: {str(e)}")
+
+    def take_node_offline(self):
+        try:
+            offline_response = requests.post(
+                f"{self.worker.worker_url}/delete-node",
+                json={"url": self.tunnel_url},
+                headers={"Content-Type": "application/json"}
+            )
+            self.main_window.log_info(f"Offline Response: {offline_response.text}")
+        except Exception as e:
+            self.main_window.log_info(f"Error taking node offline: {str(e)}")
 
 
 class SettingsSection(QFrame):
@@ -2035,6 +2148,8 @@ class MainWindow(MSFluentWindow):
                     command += ' --no-mmap'
                 if section.custom_command_append.toPlainText().strip():
                     command += f' {section.custom_command_append.toPlainText().strip()}'
+                if hasattr(section, 'is_sharing') and section.is_sharing.isChecked():
+                    command += ' --metrics'
             elif old_executable == 'llama-bench':
                 command += f' -ngl {section.gpu_layers_spinbox.value()}'
 

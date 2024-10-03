@@ -1,4 +1,3 @@
-from hashlib import sha256
 import sys
 import os
 import json
@@ -8,14 +7,14 @@ import requests
 import math
 import re
 import time
-import threading
 import zipfile
 import py7zr
 import shutil
 from enum import Enum
 from functools import partial
+from hashlib import sha256
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QThread
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QStackedWidget, QDialog, QDialogButtonBox, QComboBox, QLineEdit, QSpacerItem, QSizePolicy
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QStackedWidget, QSpacerItem, QSizePolicy
 from PySide6.QtGui import QIcon, QColor
 from qfluentwidgets import PushButton, CheckBox, SpinBox, PrimaryPushButton, TextEdit, EditableComboBox, MessageBox, setTheme, Theme, MSFluentWindow, FluentIcon as FIF, Slider, ComboBox, setThemeColor, LineEdit, HyperlinkButton, NavigationItemPosition, TableWidget, TransparentPushButton, SegmentedWidget, InfoBar, InfoBarPosition, ProgressBar
 
@@ -1236,8 +1235,7 @@ class DownloadSection(QFrame):
         # delattr(self, '_download_processed')
 
     def check_sha256(self, filename, expected_sha256):
-        import hashlib
-        sha256_hash = hashlib.sha256()
+        sha256_hash = sha256()
         with open(filename, "rb") as f:
             for byte_block in iter(lambda: f.read(4096), b""):
                 sha256_hash.update(byte_block)

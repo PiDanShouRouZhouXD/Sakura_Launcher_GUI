@@ -1543,10 +1543,22 @@ class CFShareSection(RunSection):
         for key, label in self.metrics_labels.items():
             if key in metrics:
                 value = metrics[key]
-                if key in ['prompt_tokens_total', 'tokens_predicted_total', 'n_decode_total', 'kv_cache_tokens', 'requests_processing', 'requests_deferred']:
-                    label.setText(f"{label.text().split(':')[0]}: {value:.0f}")
+                if key in ['prompt_tokens_total', 'tokens_predicted_total']:
+                    label.setText(f"{label.text().split(':')[0]}: {value:.0f} tokens")
+                elif key in ['prompt_seconds_total', 'tokens_predicted_seconds_total']:
+                    label.setText(f"{label.text().split(':')[0]}: {value:.2f} 秒")
+                elif key == 'n_decode_total':
+                    label.setText(f"{label.text().split(':')[0]}: {value:.0f} 次")
+                elif key == 'n_busy_slots_per_decode':
+                    label.setText(f"{label.text().split(':')[0]}: {value:.2f}")
+                elif key in ['prompt_tokens_seconds', 'predicted_tokens_seconds']:
+                    label.setText(f"{label.text().split(':')[0]}: {value:.2f} tokens/s")
                 elif key == 'kv_cache_usage_ratio':
                     label.setText(f"{label.text().split(':')[0]}: {value*100:.2f}%")
+                elif key == 'kv_cache_tokens':
+                    label.setText(f"{label.text().split(':')[0]}: {value:.0f} tokens")
+                elif key in ['requests_processing', 'requests_deferred']:
+                    label.setText(f"{label.text().split(':')[0]}: {value:.0f}")
                 else:
                     label.setText(f"{label.text().split(':')[0]}: {value:.2f}")
 

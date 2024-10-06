@@ -1376,19 +1376,28 @@ class CFShareWorker(QThread):
 
     def update_metrics(self):
         try:
-            response = requests.get(f"http://localhost:{self.port}/metrics")
-            metrics = self.parse_metrics(response.text)
-            self.metrics_updated.emit(metrics)
-        except Exception as e:
+            response = requests.get(f"http://localhost:{self.port}/metrics", timeout=5)
+            if response.status_code == 200:
+                metrics = self.parse_metrics(response.text)
+                self.metrics_updated.emit(metrics)
+            else:
+                self.error_occurred.emit(f"Error updating metrics: HTTP status {response.status_code}")
+        except requests.RequestException as e:
             self.error_occurred.emit(f"Error updating metrics: {str(e)}")
+        except Exception as e:
+            self.error_occurred.emit(f"Unexpected error updating metrics: {str(e)}")
 
     def parse_metrics(self, metrics_text):
         metrics = {}
         for line in metrics_text.split('\n'):
             if line.startswith('#') or not line.strip():
                 continue
-            key, value = line.split(' ')
-            metrics[key.split(':')[-1]] = float(value)
+            try:
+                key, value = line.split(' ')
+                metrics[key.split(':')[-1]] = float(value)
+            except ValueError:
+                # 如果无法解析某一行,跳过该行
+                continue
         return metrics
 
     def stop(self):
@@ -1611,6 +1620,9 @@ class CFShareSection(RunSection):
                     label.setText(f"{label.text().split(':')[0]}: {value:.0f}")
                 else:
                     label.setText(f"{label.text().split(':')[0]}: {value:.2f}")
+            else:
+                # 如果某个指标不存在,保持原来的文本
+                pass
 
     def save_settings(self):
         settings = {
@@ -2210,8 +2222,8 @@ class MainWindow(MSFluentWindow):
                     command += ' --no-mmap'
                 if section.custom_command_append.toPlainText().strip():
                     command += f' {section.custom_command_append.toPlainText().strip()}'
-                if hasattr(section, 'is_sharing') and section.is_sharing.isChecked():
-                    command += ' --metrics'
+                # if hasattr(section, 'is_sharing') and section.is_sharing.isChecked():
+                command += ' --metrics'
             elif old_executable == 'llama-bench':
                 command += f' -ngl {section.gpu_layers_spinbox.value()}'
 
@@ -2299,7 +2311,10 @@ class MainWindow(MSFluentWindow):
 
     def terminate_all_processes(self):
         print("Terminating all processes...")
-        self.cf_share_section.stop_cf_share()
+        try:
+            self.cf_share_section.stop_cf_share()
+        except AttributeError:
+            print("Warning: CFShareSection not properly initialized")
         for proc in processes:
             proc.terminate()
             try:

@@ -1,8 +1,9 @@
-
+__pycache__
 /build
 /dist
+/llama
+/Release
+sakura-launcher_config.json
+main.spec
 *.gguf
 *.log
-/llama
-sakura-launcher_config.json
-/Release

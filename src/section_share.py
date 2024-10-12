@@ -20,7 +20,7 @@ from qfluentwidgets import (
     FluentIcon as FIF,
 )
 
-from common import CLOUDFLARED, CONFIG_FILE, RunSection, get_resource_path
+from .common import CLOUDFLARED, CONFIG_FILE, RunSection, get_resource_path
 
 
 class CFShareWorker(QThread):

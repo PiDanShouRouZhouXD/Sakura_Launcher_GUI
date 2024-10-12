@@ -15,7 +15,7 @@ from qfluentwidgets import (
     LineEdit,
 )
 
-from common import CONFIG_FILE
+from .common import CONFIG_FILE
 
 
 class SettingsSection(QFrame):

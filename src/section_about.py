@@ -10,7 +10,7 @@ from qfluentwidgets import (
     HyperlinkButton,
 )
 
-from common import SAKURA_LAUNCHER_GUI_VERSION
+from .common import SAKURA_LAUNCHER_GUI_VERSION
 
 
 class AboutSection(QFrame):

@@ -2,7 +2,7 @@ from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QVBoxLayout, QFrame
 from qfluentwidgets import PushButton, TextEdit, FluentIcon as FIF
 
-from common import processes
+from .common import processes
 
 
 class LogSection(QFrame):

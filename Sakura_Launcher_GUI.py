@@ -2177,6 +2177,25 @@ class MainWindow(MSFluentWindow):
     def run_llamacpp_batch_bench(self):
         self._run_llamacpp(self.run_llamacpp_batch_bench_section, 'llama-batched-bench')
 
+    def get_llamacpp_version(self, executable_path):
+        try:
+            self.log_info(f"尝试执行命令: {executable_path} --version")
+            process = subprocess.Popen([executable_path, '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate(timeout=0.5)  # 减少超时时间到0.5秒
+            version_output = stderr.strip()  # 使用 stderr 而不是 stdout
+            self.log_info(f"版本输出: {version_output}")
+            version_match = re.search(r'version: (\d+)', version_output)
+            if version_match:
+                return int(version_match.group(1))
+            else:
+                self.log_info("无法匹配版本号")
+        except subprocess.TimeoutExpired:
+            self.log_info("获取llama.cpp版本超时")
+            process.kill()
+        except Exception as e:
+            self.log_info(f"获取llama.cpp版本时出错: {str(e)}")
+        return None
+
     def _run_llamacpp(self, section, old_executable, new_executable=None):
         custom_command = section.custom_command.toPlainText().strip()
         llamacpp_override = section.llamacpp_override.text().strip()
@@ -2201,6 +2220,10 @@ class MainWindow(MSFluentWindow):
             return
 
         executable_path = self._add_quotes(executable_path)
+        
+        # 获取llama.cpp版本
+        version = self.get_llamacpp_version(executable_path.strip('"'))
+        self.log_info(f"llama.cpp版本: {version}")
 
         if custom_command:
             command = f'{executable_path} --model {model_path} {custom_command}'
@@ -2222,8 +2245,12 @@ class MainWindow(MSFluentWindow):
                     command += ' --no-mmap'
                 if section.custom_command_append.toPlainText().strip():
                     command += f' {section.custom_command_append.toPlainText().strip()}'
-                # if hasattr(section, 'is_sharing') and section.is_sharing.isChecked():
                 command += ' --metrics'
+                
+                # 根据版本添加--slots参数
+                if version is not None and version >= 3898:
+                    self.log_info("版本大于等于3898，添加--slots参数")
+                    command += ' --slots'
             elif old_executable == 'llama-bench':
                 command += f' -ngl {section.gpu_layers_spinbox.value()}'
 

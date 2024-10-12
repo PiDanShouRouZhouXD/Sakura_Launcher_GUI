@@ -11,7 +11,7 @@ from qfluentwidgets import (
     FluentIcon as FIF,
 )
 
-from common import CURRENT_DIR, CONFIG_FILE, RunSection
+from .common import CURRENT_DIR, CONFIG_FILE, RunSection
 
 
 class RunBenchmarkSection(RunSection):

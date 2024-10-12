@@ -14,7 +14,7 @@ from qfluentwidgets import (
     Slider,
 )
 
-from common import CURRENT_DIR, CONFIG_FILE, RunSection
+from .common import CURRENT_DIR, CONFIG_FILE, RunSection
 
 
 class RunServerSection(RunSection):

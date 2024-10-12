@@ -19,7 +19,7 @@ from qfluentwidgets import (
     SegmentedWidget,
 )
 
-from common import CONFIG_FILE, CURRENT_DIR
+from .common import CONFIG_FILE, CURRENT_DIR
 
 
 class ConfigEditor(QFrame):

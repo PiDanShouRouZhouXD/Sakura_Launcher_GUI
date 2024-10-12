@@ -23,7 +23,7 @@ from qfluentwidgets import (
     ProgressBar,
 )
 
-from common import CURRENT_DIR, get_self_path, logger
+from .common import CURRENT_DIR, get_self_path, logger
 
 
 class DownloadThread(QThread):

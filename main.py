@@ -21,16 +21,16 @@ from qfluentwidgets import (
     InfoBarPosition,
 )
 
-from common import *
-from section_run_server import RunServerSection
-from section_run_benchmark import RunBenchmarkSection
-from section_batch_benchmark import RunBatchBenchmarkSection
-from section_download import DownloadSection
-from section_log import LogSection
-from section_share import CFShareSection
-from section_about import AboutSection
-from section_config_editor import ConfigEditor
-from section_settings import SettingsSection
+from src.common import *
+from src.section_run_server import RunServerSection
+from src.section_run_benchmark import RunBenchmarkSection
+from src.section_batch_benchmark import RunBatchBenchmarkSection
+from src.section_download import DownloadSection
+from src.section_log import LogSection
+from src.section_share import CFShareSection
+from src.section_about import AboutSection
+from src.section_config_editor import ConfigEditor
+from src.section_settings import SettingsSection
 
 
 class MainWindow(MSFluentWindow):
@@ -171,23 +171,22 @@ class MainWindow(MSFluentWindow):
     def get_llamacpp_version(self, executable_path):
         try:
             self.log_info(f"尝试执行命令: {executable_path} --version")
-            process = subprocess.Popen(
+            result = subprocess.run(
                 [executable_path, "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
+                timeout=2,
+                shell=True
             )
-            stdout, stderr = process.communicate(timeout=0.5)  # 减少超时时间到0.5秒
-            version_output = stderr.strip()  # 使用 stderr 而不是 stdout
+            version_output = result.stderr.strip()  # 使用 stderr 而不是 stdout
             self.log_info(f"版本输出: {version_output}")
             version_match = re.search(r"version: (\d+)", version_output)
             if version_match:
                 return int(version_match.group(1))
             else:
                 self.log_info("无法匹配版本号")
-        except subprocess.TimeoutExpired:
-            self.log_info("获取llama.cpp版本超时")
-            process.kill()
+        except subprocess.TimeoutExpired as e:
+            self.log_info(f"获取llama.cpp版本超时: {e.stdout}, {e.stderr}")
         except Exception as e:
             self.log_info(f"获取llama.cpp版本时出错: {str(e)}")
         return None

@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['Sakura_Launcher_GUI.py'],
+    ['src/main.py'],
     pathex=[],
     binaries=[],
     datas=[('icon.png', '.'), ('cloudflared-windows-amd64.exe', '.')],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Sakura_Launcher_GUI',
+    name='main',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

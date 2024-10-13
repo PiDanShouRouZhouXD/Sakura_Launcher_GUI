@@ -21,8 +21,6 @@ from qfluentwidgets import (
     LineEdit,
 )
 
-from ui import UiCheckBox
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -262,7 +262,7 @@ class MainWindow(MSFluentWindow):
                 if section.custom_command_append.toPlainText().strip():
                     command += f" {section.custom_command_append.toPlainText().strip()}"
 
-        if section.gpu_enabled_check.isChecked():
+        if section.gpu_combo.currentText() != "自动":
             selected_gpu = section.gpu_combo.currentText()
             selected_index = section.gpu_combo.currentIndex()
             manual_index = section.manully_select_gpu_index.text()

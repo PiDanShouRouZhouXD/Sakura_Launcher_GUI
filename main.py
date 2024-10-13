@@ -23,7 +23,6 @@ from qfluentwidgets import (
 
 from src.common import *
 from src.section_run_server import RunServerSection
-from src.section_run_benchmark import RunBenchmarkSection
 from src.section_batch_benchmark import RunBatchBenchmarkSection
 from src.section_download import DownloadSection
 from src.section_log import LogSection
@@ -49,7 +48,6 @@ class MainWindow(MSFluentWindow):
     def init_navigation(self):
         self.settings_section = SettingsSection("设置", self)
         self.run_server_section = RunServerSection("运行server", self)
-        self.run_bench_section = RunBenchmarkSection("运行bench", self)
         self.run_llamacpp_batch_bench_section = RunBatchBenchmarkSection(
             "批量运行bench", self
         )
@@ -60,7 +58,6 @@ class MainWindow(MSFluentWindow):
         self.cf_share_section = CFShareSection("共享", self)
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
-        self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
         self.addSubInterface(
             self.run_llamacpp_batch_bench_section, FIF.COMMAND_PROMPT, "batch-bench"
         )
@@ -77,24 +74,17 @@ class MainWindow(MSFluentWindow):
 
     def init_window(self):
         self.run_server_section.run_button.clicked.connect(self.run_llamacpp_server)
-        self.run_bench_section.run_button.clicked.connect(self.run_llamacpp_bench)
         self.run_llamacpp_batch_bench_section.run_button.clicked.connect(
             self.run_llamacpp_batch_bench
         )
         self.run_server_section.load_preset_button.clicked.connect(
             self.run_server_section.load_presets
         )
-        self.run_bench_section.load_preset_button.clicked.connect(
-            self.run_bench_section.load_presets
-        )
         self.run_llamacpp_batch_bench_section.load_preset_button.clicked.connect(
             self.run_llamacpp_batch_bench_section.load_presets
         )
         self.run_server_section.refresh_model_button.clicked.connect(
             self.run_server_section.refresh_models
-        )
-        self.run_bench_section.refresh_model_button.clicked.connect(
-            self.run_bench_section.refresh_models
         )
         self.run_llamacpp_batch_bench_section.refresh_model_button.clicked.connect(
             self.run_llamacpp_batch_bench_section.refresh_models
@@ -132,7 +122,6 @@ class MainWindow(MSFluentWindow):
 
     def refresh_all_model_lists(self):
         self.run_server_section.refresh_models()
-        self.run_bench_section.refresh_models()
         self.run_llamacpp_batch_bench_section.refresh_models()
 
     def createSuccessInfoBar(self, title, content):
@@ -161,9 +150,6 @@ class MainWindow(MSFluentWindow):
 
     def run_llamacpp_server(self):
         self._run_llamacpp(self.run_server_section, "server", "llama-server")
-
-    def run_llamacpp_bench(self):
-        self._run_llamacpp(self.run_bench_section, "llama-bench")
 
     def run_llamacpp_batch_bench(self):
         self._run_llamacpp(self.run_llamacpp_batch_bench_section, "llama-batched-bench")
@@ -356,7 +342,6 @@ class MainWindow(MSFluentWindow):
     def refresh_gpus(self):
         self.gpu_manager.detect_gpus()
         self.run_server_section.refresh_gpus()
-        self.run_bench_section.refresh_gpus()
         self.run_llamacpp_batch_bench_section.refresh_gpus()
 
         if not self.gpu_manager.nvidia_gpus and not self.gpu_manager.amd_gpus:

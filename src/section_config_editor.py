@@ -49,15 +49,12 @@ class ConfigEditor(QFrame):
         self.layout = QVBoxLayout(self)
 
         self.run_server_section = QWidget(self)
-        self.run_bench_section = QWidget(self)
         self.run_batch_bench_section = QWidget(self)  # New section for batch bench
 
         self.init_run_server_section()
-        self.init_run_bench_section()
         self.init_run_batch_bench_section()  # Initialize the new section
 
         self.add_sub_interface(self.run_server_section, "run_server_section", "Server")
-        self.add_sub_interface(self.run_bench_section, "run_bench_section", "Bench")
         self.add_sub_interface(
             self.run_batch_bench_section, "run_batch_bench_section", "Batch Bench"
         )  # Add new interface
@@ -98,12 +95,6 @@ class ConfigEditor(QFrame):
         layout.addWidget(self.run_server_table)
         self.run_server_section.setLayout(layout)
 
-    def init_run_bench_section(self):
-        layout = QVBoxLayout(self.run_bench_section)
-        self.run_bench_table = self.create_config_table()
-        layout.addWidget(self.run_bench_table)
-        self.run_bench_section.setLayout(layout)
-
     def init_run_batch_bench_section(self):
         layout = QVBoxLayout(self.run_batch_bench_section)
         self.run_batch_bench_table = self.create_config_table()
@@ -120,14 +111,12 @@ class ConfigEditor(QFrame):
 
     def save_settings(self):
         server_configs = self.table_to_config(self.run_server_table)
-        bench_configs = self.table_to_config(self.run_bench_table)
         batch_bench_configs = self.table_to_config(
             self.run_batch_bench_table
         )  # Add this line
 
         settings = {
             "运行server": server_configs,
-            "运行bench": bench_configs,
             "批量运行bench": batch_bench_configs,  # Add this line
         }
 
@@ -158,7 +147,6 @@ class ConfigEditor(QFrame):
             settings = {}
 
         self.config_to_table(self.run_server_table, settings.get("运行server", []))
-        self.config_to_table(self.run_bench_table, settings.get("运行bench", []))
         self.config_to_table(
             self.run_batch_bench_table, settings.get("批量运行bench", [])
         )  # Add this line

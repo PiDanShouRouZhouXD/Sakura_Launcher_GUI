@@ -307,6 +307,7 @@ class MainWindow(MSFluentWindow):
 
     def closeEvent(self, event):
         self.save_window_state()
+        self.save_advanced_state()  # 新增：保存高级设置状态
         self.terminate_all_processes()
         event.accept()
 
@@ -344,6 +345,15 @@ class MainWindow(MSFluentWindow):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
             config_data.update(settings)
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=4)
+
+    def save_advanced_state(self):
+        if self.settings_section.remember_advanced_state.isChecked():
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                config_data = json.load(f)
+            if self.settings_section.remember_advanced_state.isChecked():
+                config_data["advanced_state"] = self.run_server_section.get_advanced_state()
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, ensure_ascii=False, indent=4)
 

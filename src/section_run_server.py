@@ -128,20 +128,13 @@ class RunServerSection(RunSection):
         return ip_port_log_layout
 
     def _create_benchmark_layout(self):
-        row1 = QHBoxLayout()
-        self.npp_input = UiLineEdit(self, "Prompt数量", "128,256,512")
-        self.ntg_input = UiLineEdit(self, "生成文本数量", "128,256")
-        self.npl_input = UiLineEdit(self, "并行Prompt数量", "1,2,4,8,16,32")
-        row1.addLayout(UiCol("Prompt数量 -npp", self.npp_input))
-        row1.addLayout(UiCol("生成文本数量 -ntg", self.ntg_input))
-        row1.addLayout(UiCol("并行Prompt数量 -npl", self.npl_input))
-
-        self.pps_check = UiCheckBox(self, "Prompt共享 -pps", False)
-
-        layout = QVBoxLayout()
-        layout.addLayout(row1)
-        layout.addWidget(self.pps_check)
-
+        layout = QHBoxLayout()
+        self.npp_input = UiLineEdit(self, "Prompt数量", "768")
+        self.ntg_input = UiLineEdit(self, "生成文本数量", "384")
+        self.npl_input = UiLineEdit(self, "并行Prompt数量", "1,2,4,8,16")
+        layout.addLayout(UiCol("Prompt数量 -npp", self.npp_input))
+        layout.addLayout(UiCol("生成文本数量 -ntg", self.ntg_input))
+        layout.addLayout(UiCol("并行Prompt数量 -npl", self.npl_input))
         return layout
 
     def _init_advance_options(self, layout):
@@ -272,7 +265,6 @@ class RunServerSection(RunSection):
                 "npp": self.npp_input.text(),
                 "ntg": self.ntg_input.text(),
                 "npl": self.npl_input.text(),
-                "pps": self.pps_check.isChecked(),
                 "llamacpp_override": self.llamacpp_override.text(),
                 "is_sharing": self.is_sharing.isChecked(),
             },
@@ -330,10 +322,9 @@ class RunServerSection(RunSection):
                     self.flash_attention_check.setChecked(
                         config.get("flash_attention", True)
                     )
-                    self.npp_input.setText(config.get("npp", "128,256,512"))
-                    self.ntg_input.setText(config.get("ntg", "128,256"))
-                    self.npl_input.setText(config.get("npl", "1,2,4,8,16,32"))
-                    self.pps_check.setChecked(config.get("pps", False))
+                    self.npp_input.setText(config.get("npp", "768"))
+                    self.ntg_input.setText(config.get("ntg", "384"))
+                    self.npl_input.setText(config.get("npl", "1,2,4,8,16"))
                     self.no_mmap_check.setChecked(config.get("no_mmap", True))
                     self.gpu_combo.setCurrentText(config.get("gpu", ""))
                     self.manully_select_gpu_index.setText(config.get("gpu_index", ""))

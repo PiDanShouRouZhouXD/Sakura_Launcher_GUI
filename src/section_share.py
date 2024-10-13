@@ -281,7 +281,7 @@ class CFShareSection(RunSection):
             return
         port = self.main_window.run_server_section.port_input.text().strip()
         if not port:
-            MessageBox("错误", "请在运行server面板中设置端口号", self).exec_()
+            MessageBox("错误", "请在运行面板中设置端口号", self).exec_()
             return
         if not self.check_local_health_status():
             MessageBox(

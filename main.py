@@ -23,7 +23,6 @@ from qfluentwidgets import (
 
 from src.common import *
 from src.section_run_server import RunServerSection
-from src.section_batch_benchmark import RunBatchBenchmarkSection
 from src.section_download import DownloadSection
 from src.section_log import LogSection
 from src.section_share import CFShareSection
@@ -47,20 +46,14 @@ class MainWindow(MSFluentWindow):
 
     def init_navigation(self):
         self.settings_section = SettingsSection("设置", self)
-        self.run_server_section = RunServerSection("运行server", self)
-        self.run_llamacpp_batch_bench_section = RunBatchBenchmarkSection(
-            "批量运行bench", self
-        )
+        self.run_server_section = RunServerSection("运行", self)
         self.log_section = LogSection("日志输出")
         self.about_section = AboutSection("关于")
         self.config_editor_section = ConfigEditor("配置编辑", self)
         self.dowload_section = DownloadSection("下载", self)
         self.cf_share_section = CFShareSection("共享", self)
 
-        self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
-        self.addSubInterface(
-            self.run_llamacpp_batch_bench_section, FIF.COMMAND_PROMPT, "batch-bench"
-        )
+        self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行")
         self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
         self.addSubInterface(self.config_editor_section, FIF.EDIT, "配置编辑")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
@@ -74,20 +67,12 @@ class MainWindow(MSFluentWindow):
 
     def init_window(self):
         self.run_server_section.run_button.clicked.connect(self.run_llamacpp_server)
-        self.run_llamacpp_batch_bench_section.run_button.clicked.connect(
-            self.run_llamacpp_batch_bench
-        )
+        self.run_server_section.benchmark_button.clicked.connect(self.run_llamacpp_batch_bench)
         self.run_server_section.load_preset_button.clicked.connect(
             self.run_server_section.load_presets
         )
-        self.run_llamacpp_batch_bench_section.load_preset_button.clicked.connect(
-            self.run_llamacpp_batch_bench_section.load_presets
-        )
         self.run_server_section.refresh_model_button.clicked.connect(
             self.run_server_section.refresh_models
-        )
-        self.run_llamacpp_batch_bench_section.refresh_model_button.clicked.connect(
-            self.run_llamacpp_batch_bench_section.refresh_models
         )
 
         # 连接设置更改信号
@@ -122,7 +107,6 @@ class MainWindow(MSFluentWindow):
 
     def refresh_all_model_lists(self):
         self.run_server_section.refresh_models()
-        self.run_llamacpp_batch_bench_section.refresh_models()
 
     def createSuccessInfoBar(self, title, content):
         InfoBar.success(
@@ -152,7 +136,7 @@ class MainWindow(MSFluentWindow):
         self._run_llamacpp(self.run_server_section, "server", "llama-server")
 
     def run_llamacpp_batch_bench(self):
-        self._run_llamacpp(self.run_llamacpp_batch_bench_section, "llama-batched-bench")
+        self._run_llamacpp(self.run_server_section, "llama-batched-bench")
 
     def get_llamacpp_version(self, executable_path):
         try:
@@ -345,7 +329,6 @@ class MainWindow(MSFluentWindow):
     def refresh_gpus(self):
         self.gpu_manager.detect_gpus()
         self.run_server_section.refresh_gpus()
-        self.run_llamacpp_batch_bench_section.refresh_gpus()
 
         if not self.gpu_manager.nvidia_gpus and not self.gpu_manager.amd_gpus:
             self.log_info("未检测到NVIDIA或AMD GPU")

@@ -1,16 +1,9 @@
-import os
-import json
-import math
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame
+from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget
 from qfluentwidgets import (
-    PushButton,
     CheckBox,
     SpinBox,
-    EditableComboBox,
-    FluentIcon as FIF,
     Slider,
-    ComboBox,
     LineEdit,
 )
 
@@ -72,5 +65,17 @@ def UiHLine(self):
 def UiRow(text, content):
     layout = QHBoxLayout()
     layout.addWidget(QLabel(text))
-    layout.addLayout(content)
+    if issubclass(type(content), QWidget):
+        layout.addWidget(content)
+    else:
+        layout.addLayout(content)
+    return layout
+
+def UiCol(text, content):
+    layout = QVBoxLayout()
+    layout.addWidget(QLabel(text))
+    if issubclass(type(content), QWidget):
+        layout.addWidget(content)
+    else:
+        layout.addLayout(content)
     return layout

@@ -85,9 +85,30 @@ class RunServerSection(RunSection):
 
         return ip_port_log_layout
 
+    def _create_benchmark_layout(self):
+        row1 = QHBoxLayout()
+        self.npp_input = UiLineEdit(self, "Prompt数量", "128,256,512")
+        self.ntg_input = UiLineEdit(self, "生成文本数量", "128,256")
+        self.npl_input = UiLineEdit(self, "并行Prompt数量", "1,2,4,8,16,32")
+        row1.addLayout(UiCol("Prompt数量 -npp", self.npp_input))
+        row1.addLayout(UiCol("生成文本数量 -ntg", self.ntg_input))
+        row1.addLayout(UiCol("并行Prompt数量 -npl", self.npl_input))
+
+        self.pps_check = UiCheckBox(self, "Prompt共享 -pps", False)
+
+        layout = QVBoxLayout()
+        layout.addLayout(row1)
+        layout.addWidget(self.pps_check)
+
+        return layout
+
     def _init_simple_options(self, layout):
         buttons_layout = QHBoxLayout()
         buttons_layout.setAlignment(Qt.AlignRight)
+
+        self.benchmark_button = PushButton(FIF.UNIT, "性能测试", self)
+        self.benchmark_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.benchmark_button)
 
         self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
         self.run_button.setFixedSize(110, 30)
@@ -128,6 +149,8 @@ class RunServerSection(RunSection):
             UiRow("GPU层数 -ngl", UiSlider(self, "gpu_layers", 200, 0, 200, 1))
         )
         layout.addLayout(self._create_ip_port_log_option())
+
+        layout.addLayout(self._create_benchmark_layout())
 
     def _init_override_options(self, layout):
         # 新增llamacpp覆盖选项
@@ -226,7 +249,6 @@ class RunServerSection(RunSection):
                 "gpu_layers": self.gpu_layers_spinbox.value(),
                 "flash_attention": self.flash_attention_check.isChecked(),
                 "no_mmap": self.no_mmap_check.isChecked(),
-                "gpu_enabled": self.gpu_enabled_check.isChecked(),
                 "gpu": self.gpu_combo.currentText(),
                 "model_path": self.model_path.currentText(),
                 "context_length": self.context_length_input.value(),
@@ -235,6 +257,10 @@ class RunServerSection(RunSection):
                 "port": self.port_input.text(),
                 "log_format": self.log_format_combo.currentText(),
                 "gpu_index": self.manully_select_gpu_index.text(),
+                "npp": self.npp_input.text(),
+                "ntg": self.ntg_input.text(),
+                "npl": self.npl_input.text(),
+                "pps": self.pps_check.isChecked(),
                 "llamacpp_override": self.llamacpp_override.text(),
                 "is_sharing": self.is_sharing.isChecked(),
             },
@@ -292,8 +318,11 @@ class RunServerSection(RunSection):
                     self.flash_attention_check.setChecked(
                         config.get("flash_attention", True)
                     )
+                    self.npp_input.setText(config.get("npp", "128,256,512"))
+                    self.ntg_input.setText(config.get("ntg", "128,256"))
+                    self.npl_input.setText(config.get("npl", "1,2,4,8,16,32"))
+                    self.pps_check.setChecked(config.get("pps", False))
                     self.no_mmap_check.setChecked(config.get("no_mmap", True))
-                    self.gpu_enabled_check.setChecked(config.get("gpu_enabled", True))
                     self.gpu_combo.setCurrentText(config.get("gpu", ""))
                     self.manully_select_gpu_index.setText(config.get("gpu_index", ""))
                     self.llamacpp_override.setText(config.get("llamacpp_override", ""))

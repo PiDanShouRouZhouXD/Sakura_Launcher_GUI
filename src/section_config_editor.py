@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QTableWidgetItem,
     QWidget,
-    QStackedWidget,
 )
 from qfluentwidgets import (
     PushButton,
@@ -16,7 +15,6 @@ from qfluentwidgets import (
     FluentIcon as FIF,
     TableWidget,
     TransparentPushButton,
-    SegmentedWidget,
 )
 
 from .common import CONFIG_FILE, CURRENT_DIR
@@ -44,20 +42,11 @@ class ConfigEditor(QFrame):
         self.load_settings()
 
     def init_ui(self):
-        self.pivot = SegmentedWidget(self)
-        self.stacked_widget = QStackedWidget(self)
         self.layout = QVBoxLayout(self)
 
         self.run_server_section = QWidget(self)
-        self.run_batch_bench_section = QWidget(self)  # New section for batch bench
-
+        self.run_server_section.setObjectName("run_server_section")
         self.init_run_server_section()
-        self.init_run_batch_bench_section()  # Initialize the new section
-
-        self.add_sub_interface(self.run_server_section, "run_server_section", "Server")
-        self.add_sub_interface(
-            self.run_batch_bench_section, "run_batch_bench_section", "Batch Bench"
-        )  # Add new interface
 
         save_button = PrimaryPushButton(FIF.SAVE, "保存配置预设", self)
         save_button.clicked.connect(self.save_settings)
@@ -65,41 +54,17 @@ class ConfigEditor(QFrame):
         load_button = PushButton(FIF.SYNC, "加载配置预设", self)
         load_button.clicked.connect(self.load_settings)
 
-        self.layout.addWidget(self.pivot)
-        self.layout.addWidget(self.stacked_widget)
+        self.layout.addWidget(self.run_server_section)
         self.layout.addWidget(save_button)
         self.layout.addWidget(load_button)
 
-        self.stacked_widget.currentChanged.connect(self.on_current_index_changed)
-        self.stacked_widget.setCurrentWidget(self.run_server_section)
-        self.pivot.setCurrentItem(self.run_server_section.objectName())
-
         self.setLayout(self.layout)
-
-    def add_sub_interface(self, widget: QWidget, object_name, text):
-        widget.setObjectName(object_name)
-        self.stacked_widget.addWidget(widget)
-        self.pivot.addItem(
-            routeKey=object_name,
-            text=text,
-            onClick=lambda: self.stacked_widget.setCurrentWidget(widget),
-        )
-
-    def on_current_index_changed(self, index):
-        widget = self.stacked_widget.widget(index)
-        self.pivot.setCurrentItem(widget.objectName())
 
     def init_run_server_section(self):
         layout = QVBoxLayout(self.run_server_section)
         self.run_server_table = self.create_config_table()
         layout.addWidget(self.run_server_table)
         self.run_server_section.setLayout(layout)
-
-    def init_run_batch_bench_section(self):
-        layout = QVBoxLayout(self.run_batch_bench_section)
-        self.run_batch_bench_table = self.create_config_table()
-        layout.addWidget(self.run_batch_bench_table)
-        self.run_batch_bench_section.setLayout(layout)
 
     def create_config_table(self):
         table = TableWidget()
@@ -111,14 +76,7 @@ class ConfigEditor(QFrame):
 
     def save_settings(self):
         server_configs = self.table_to_config(self.run_server_table)
-        batch_bench_configs = self.table_to_config(
-            self.run_batch_bench_table
-        )  # Add this line
-
-        settings = {
-            "运行server": server_configs,
-            "批量运行bench": batch_bench_configs,  # Add this line
-        }
+        settings = {"运行": server_configs}
 
         config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
         if not os.path.exists(config_file_path):
@@ -146,10 +104,7 @@ class ConfigEditor(QFrame):
         except (FileNotFoundError, json.JSONDecodeError):
             settings = {}
 
-        self.config_to_table(self.run_server_table, settings.get("运行server", []))
-        self.config_to_table(
-            self.run_batch_bench_table, settings.get("批量运行bench", [])
-        )  # Add this line
+        self.config_to_table(self.run_server_table, settings.get("运行", []))
 
     def table_to_config(self, table):
         configs = []

@@ -32,7 +32,8 @@ def get_self_path():
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     else:
-        return os.path.dirname(os.path.abspath(__file__))
+        # 当前文件的绝对路径的上一级目录
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 CURRENT_DIR = get_self_path()

@@ -57,7 +57,7 @@ class MainWindow(MSFluentWindow):
         self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
         self.addSubInterface(self.config_editor_section, FIF.EDIT, "配置编辑")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
-        self.addSubInterface(self.cf_share_section, FIF.SHARE, "共享")
+        self.addSubInterface(self.cf_share_section, FIF.IOT, "共享")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
         self.addSubInterface(
             self.about_section, FIF.INFO, "关于", position=NavigationItemPosition.BOTTOM

@@ -125,7 +125,7 @@ def UiHLine(self):
     w.setStyleSheet("""
         background-color: #393939;
         margin-top: 15px;
-        margin-bottom: 15px;
+        margin-bottom: 20px;
         max-height: 1px;
         border: none;  /* 去掉边框 */
     """)

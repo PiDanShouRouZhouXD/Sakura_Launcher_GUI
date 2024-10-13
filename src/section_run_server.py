@@ -16,7 +16,7 @@ from qfluentwidgets import (
 
 from .common import CURRENT_DIR, CONFIG_FILE, RunSection
 from .ui import *
-
+from .section_settings import SettingsSection  # 新增导入
 
 class RunServerSection(RunSection):
     def __init__(self, title, main_window, parent=None):
@@ -26,6 +26,7 @@ class RunServerSection(RunSection):
         self.refresh_models()
         self.refresh_gpus()
         self.load_selected_preset()
+        self.load_advanced_state()  # 新增：加载高级设置状态
 
     def _init_ui(self):
         layout_advance = QVBoxLayout()
@@ -43,9 +44,7 @@ class RunServerSection(RunSection):
 
         self.advance_button = PushButton(FIF.MORE, "高级设置", self)
         self.advance_button.setFixedSize(110, 30)
-        self.advance_button.clicked.connect(
-            lambda: self.menu_advance.setVisible(not self.menu_advance.isVisible())
-        )
+        self.advance_button.clicked.connect(self.toggle_advanced_settings)  # 修改连接的方法
         buttons_layout.addWidget(self.advance_button)
 
         self.benchmark_button = PushButton(FIF.UNIT, "性能测试", self)
@@ -347,3 +346,22 @@ class RunServerSection(RunSection):
                 except json.JSONDecodeError:
                     return {}
         return {}
+
+    # 修改方法
+    def toggle_advanced_settings(self):
+        new_state = not self.menu_advance.isVisible()
+        self.menu_advance.setVisible(new_state)
+
+    # 新增方法
+    def get_advanced_state(self):
+        return self.menu_advance.isVisible()
+
+    def load_advanced_state(self):
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        try:
+            with open(config_file_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if config.get("remember_advanced_state", False) and self.main_window.settings_section.remember_advanced_state.isChecked():
+                self.menu_advance.setVisible(config.get("advanced_state", False))
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass

@@ -28,12 +28,54 @@ class RunServerSection(RunSection):
         self.load_selected_preset()
 
     def _init_ui(self):
+        layout_advance = QVBoxLayout()
+        layout_advance.addWidget(UiHLine(self))
+        self._init_advance_options(layout_advance)
+        self._init_override_options(layout_advance)
+        self.menu_advance = QFrame()
+        self.menu_advance.setLayout(layout_advance)
+        self.menu_advance.setVisible(False)
+
         layout = QVBoxLayout()
 
-        self._init_simple_options(layout)
-        layout.addWidget(UiHLine(self))
-        self._init_advance_options(layout)
-        self._init_override_options(layout)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setAlignment(Qt.AlignRight)
+
+        self.advance_button = PushButton(FIF.MORE, "高级设置", self)
+        self.advance_button.setFixedSize(110, 30)
+        self.advance_button.clicked.connect(
+            lambda: self.menu_advance.setVisible(not self.menu_advance.isVisible())
+        )
+        buttons_layout.addWidget(self.advance_button)
+
+        self.benchmark_button = PushButton(FIF.UNIT, "性能测试", self)
+        self.benchmark_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.benchmark_button)
+
+        self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
+        self.run_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.run_button)
+
+        buttons_group = QGroupBox("")
+        buttons_group.setStyleSheet(
+            """ QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}"""
+        )
+        buttons_group.setLayout(buttons_layout)
+        layout.addWidget(buttons_group)
+
+        layout.addLayout(UiRow("模型", self._create_model_selection_layout()))
+        layout.addLayout(UiRow("显卡", self._create_gpu_selection_layout()))
+
+        layout.addLayout(UiRow("上下文长度 -c", self._create_context_length_layout()))
+        layout.addLayout(
+            UiRow("工作线程数量 -np", UiSlider(self, "n_parallel", 1, 1, 32, 1))
+        )
+
+        self.context_per_thread_label = QLabel(self)
+        layout.addWidget(self.context_per_thread_label)
+        layout.insertStretch(-1)
+
+        layout.addWidget(self.menu_advance)
         self.setLayout(layout)
 
         self.context_length_input.valueChanged.connect(self.update_slider_from_input)
@@ -101,36 +143,6 @@ class RunServerSection(RunSection):
         layout.addWidget(self.pps_check)
 
         return layout
-
-    def _init_simple_options(self, layout):
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setAlignment(Qt.AlignRight)
-
-        self.benchmark_button = PushButton(FIF.UNIT, "性能测试", self)
-        self.benchmark_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.benchmark_button)
-
-        self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
-        self.run_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.run_button)
-
-        buttons_group = QGroupBox("")
-        buttons_group.setStyleSheet(
-            """ QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}"""
-        )
-        buttons_group.setLayout(buttons_layout)
-        layout.addWidget(buttons_group)
-
-        layout.addLayout(UiRow("模型", self._create_model_selection_layout()))
-        layout.addLayout(UiRow("显卡", self._create_gpu_selection_layout()))
-
-        layout.addLayout(UiRow("上下文长度 -c", self._create_context_length_layout()))
-        layout.addLayout(
-            UiRow("工作线程数量 -np", UiSlider(self, "n_parallel", 1, 1, 32, 1))
-        )
-
-        self.context_per_thread_label = QLabel(self)
-        layout.addWidget(self.context_per_thread_label)
 
     def _init_advance_options(self, layout):
         layout_extra_options = QHBoxLayout()

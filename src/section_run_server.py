@@ -30,38 +30,36 @@ class RunServerSection(RunSection):
     def _init_ui(self):
         layout = QVBoxLayout()
 
-        buttons_group = QGroupBox("")
-        buttons_layout = QHBoxLayout()
+        self._init_simple_options(layout)
+        layout.addWidget(UiHLine(self))
+        self._init_advance_options(layout)
+        self._init_override_options(layout)
+        self.setLayout(layout)
 
-        self.save_preset_button = PushButton(FIF.SAVE, "保存预设", self)
-        self.save_preset_button.clicked.connect(self.save_preset)
-        self.save_preset_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.save_preset_button)
+        self.context_length_input.valueChanged.connect(self.update_slider_from_input)
+        self.context_length.valueChanged.connect(self.update_context_per_thread)
+        self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
 
-        self.load_preset_button = PushButton(FIF.SYNC, "刷新预设", self)
-        self.load_preset_button.clicked.connect(self.load_presets)
-        self.load_preset_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.load_preset_button)
+        self.update_context_per_thread()
 
-        self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
-        self.run_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.run_button)
+    def _create_preset_options(self):
+        preset_layout = QHBoxLayout()
 
-        buttons_layout.setAlignment(Qt.AlignRight)
-        buttons_group.setStyleSheet(
-            """ QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}"""
-        )
-
-        buttons_group.setLayout(buttons_layout)
-        layout.addWidget(buttons_group)
-
-        layout.addWidget(QLabel("模型选择"))
-        layout.addLayout(self._create_model_selection_layout())
-        layout.addWidget(QLabel("配置预设选择"))
         self.config_preset_combo = EditableComboBox(self)
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
-        layout.addWidget(self.config_preset_combo)
+        preset_layout.addWidget(self.config_preset_combo)
 
+        self.save_preset_button = PushButton(FIF.SAVE, "保存", self)
+        self.save_preset_button.clicked.connect(self.save_preset)
+        preset_layout.addWidget(self.save_preset_button)
+
+        self.load_preset_button = PushButton(FIF.SYNC, "刷新", self)
+        self.load_preset_button.clicked.connect(self.load_presets)
+        preset_layout.addWidget(self.load_preset_button)
+
+        return preset_layout
+
+    def _create_ip_port_log_option(self):
         ip_port_log_layout = QHBoxLayout()
 
         ip_layout = QVBoxLayout()
@@ -85,34 +83,55 @@ class RunServerSection(RunSection):
         ip_port_log_layout.addLayout(host_layout)
         ip_port_log_layout.addLayout(log_layout)
 
-        layout.addLayout(ip_port_log_layout)
+        return ip_port_log_layout
 
-        layout.addLayout(UiSlider(self, "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
+    def _init_simple_options(self, layout):
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setAlignment(Qt.AlignRight)
 
-        layout.addWidget(QLabel("上下文长度 -c"))
-        layout.addLayout(self._create_context_length_layout())
+        self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
+        self.run_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.run_button)
 
+        buttons_group = QGroupBox("")
+        buttons_group.setStyleSheet(
+            """ QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}"""
+        )
+        buttons_group.setLayout(buttons_layout)
+        layout.addWidget(buttons_group)
+
+        layout.addLayout(UiRow("模型", self._create_model_selection_layout()))
+        layout.addLayout(UiRow("显卡", self._create_gpu_selection_layout()))
+
+        layout.addLayout(UiRow("上下文长度 -c", self._create_context_length_layout()))
         layout.addLayout(
-            UiSlider(self, "并行工作线程数 -np", "n_parallel", 1, 1, 32, 1)
+            UiRow("工作线程数量 -np", UiSlider(self, "n_parallel", 1, 1, 32, 1))
         )
 
         self.context_per_thread_label = QLabel(self)
         layout.addWidget(self.context_per_thread_label)
 
+    def _init_advance_options(self, layout):
+        layout_extra_options = QHBoxLayout()
+        self.is_sharing = UiCheckBox(self, "启动后自动开启共享", False)
+        layout_extra_options.addWidget(self.is_sharing)
+
         self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
-        layout.addWidget(self.flash_attention_check)
+        layout_extra_options.addWidget(self.flash_attention_check)
 
         self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
-        layout.addWidget(self.no_mmap_check)
+        layout_extra_options.addWidget(self.no_mmap_check)
+        layout.addLayout(layout_extra_options)
 
-        self.is_sharing = UiCheckBox(self, "启动后自动开启共享", False)
-        layout.addWidget(self.is_sharing)
+        layout.addLayout(UiRow("配置预设选择", self._create_preset_options()))
+        layout.addLayout(
+            UiRow("GPU层数 -ngl", UiSlider(self, "gpu_layers", 200, 0, 200, 1))
+        )
+        layout.addLayout(self._create_ip_port_log_option())
 
-        layout.addLayout(self._create_gpu_selection_layout())
-
+    def _init_override_options(self, layout):
         # 新增llamacpp覆盖选项
         self.llamacpp_override = UiLineEdit(self, "覆盖默认llamacpp路径（可选）", "")
-        layout.addWidget(QLabel("覆盖默认llamacpp路径"))
         layout.addWidget(self.llamacpp_override)
 
         self.custom_command_append = TextEdit(self)
@@ -124,14 +143,6 @@ class RunServerSection(RunSection):
         self.custom_command = TextEdit(self)
         self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
         layout.addWidget(self.custom_command)
-
-        self.setLayout(layout)
-
-        self.context_length_input.valueChanged.connect(self.update_slider_from_input)
-        self.context_length.valueChanged.connect(self.update_context_per_thread)
-        self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
-
-        self.update_context_per_thread()
 
     def _create_context_length_layout(self):
         layout = QHBoxLayout()
@@ -186,7 +197,7 @@ class RunServerSection(RunSection):
         n_parallel = self.n_parallel_spinbox.value()
         context_per_thread = total_context // n_parallel
         self.context_per_thread_label.setText(
-            f"每个线程的context数量: {context_per_thread}"
+            f"每个工作线程的上下文大小: {context_per_thread}"
         )
 
     def save_preset(self):

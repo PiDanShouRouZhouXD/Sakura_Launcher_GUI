@@ -3,25 +3,18 @@ import os
 import subprocess
 import logging
 from enum import Enum
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Signal, QObject
 from PySide6.QtWidgets import (
-    QVBoxLayout,
     QHBoxLayout,
-    QLabel,
     QFrame,
 )
 from qfluentwidgets import (
     PushButton,
-    CheckBox,
-    SpinBox,
     EditableComboBox,
     FluentIcon as FIF,
-    Slider,
     ComboBox,
     LineEdit,
 )
-
-from .ui import UiCheckBox
 
 
 logging.basicConfig(level=logging.INFO)
@@ -180,22 +173,19 @@ class RunSection(QFrame):
 
     def _create_gpu_selection_layout(self):
         layout = QHBoxLayout()
-        self.gpu_enabled_check = UiCheckBox(self, "单GPU启动", True)
-        self.gpu_enabled_check.stateChanged.connect(self.toggle_gpu_selection)
         self.gpu_combo = ComboBox(self)
         self.manully_select_gpu_index = LineEdit(self)
         self.manully_select_gpu_index.setPlaceholderText("手动指定GPU索引")
         self.manully_select_gpu_index.setFixedWidth(140)
-        layout.addWidget(self.gpu_enabled_check)
-        layout.addWidget(self.manully_select_gpu_index)
         layout.addWidget(self.gpu_combo)
+        layout.addWidget(self.manully_select_gpu_index)
         return layout
 
     def _create_model_selection_layout(self):
         layout = QHBoxLayout()
         self.model_path = EditableComboBox(self)
         self.model_path.setPlaceholderText("请选择模型路径")
-        self.refresh_model_button = PushButton(FIF.SYNC, "刷新模型", self)
+        self.refresh_model_button = PushButton(FIF.SYNC, "刷新", self)
         self.refresh_model_button.clicked.connect(self.refresh_models)
         layout.addWidget(self.model_path)
         layout.addWidget(self.refresh_model_button)
@@ -261,5 +251,4 @@ class RunSection(QFrame):
         if not self.nvidia_gpus and not self.amd_gpus:
             logging.warning("未检测到NVIDIA或AMD GPU")
 
-    def toggle_gpu_selection(self):
-        self.gpu_combo.setEnabled(self.gpu_enabled_check.isChecked())
+        self.gpu_combo.addItems(["自动"])

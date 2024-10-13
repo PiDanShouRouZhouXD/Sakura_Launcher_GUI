@@ -2,7 +2,7 @@ import os
 import json
 import math
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QGroupBox
+from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame
 from qfluentwidgets import (
     PushButton,
     CheckBox,
@@ -19,6 +19,7 @@ def UiCheckBox(parent, text, checked):
     w = CheckBox(parent)
     w.setText(text)
     w.setChecked(checked)
+    w.setStyleSheet("font-size: 12px")
     return w
 
 
@@ -28,19 +29,15 @@ def UiLineEdit(parent, placeholder, text):
     w.setText(text)
     return w
 
+
 def UiSlider(
     parent,
-    text,
     variable_name,
     slider_value,
     slider_min,
     slider_max,
     slider_step,
 ):
-    layout = QVBoxLayout()
-    label = QLabel(text)
-    layout.addWidget(label)
-
     h_layout = QHBoxLayout()
     slider = Slider(Qt.Horizontal, parent)
     slider.setRange(slider_min, slider_max)
@@ -57,9 +54,23 @@ def UiSlider(
 
     h_layout.addWidget(slider)
     h_layout.addWidget(spinbox)
-    layout.addLayout(h_layout)
 
     setattr(parent, f"{variable_name.replace(' ', '_')}", slider)
     setattr(parent, f"{variable_name.replace(' ', '_')}_spinbox", spinbox)
 
+    return h_layout
+
+
+def UiHLine(self):
+    w = QFrame(self)
+    w.setFrameShape(QFrame.HLine)
+    w.setFrameShadow(QFrame.Sunken)
+    w.setFixedHeight(32)
+    return w
+
+
+def UiRow(text, content):
+    layout = QHBoxLayout()
+    layout.addWidget(QLabel(text))
+    layout.addLayout(content)
     return layout

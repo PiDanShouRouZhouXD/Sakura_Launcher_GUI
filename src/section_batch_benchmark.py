@@ -61,7 +61,8 @@ class RunBatchBenchmarkSection(RunSection):
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
         layout.addWidget(self.config_preset_combo)
 
-        layout.addLayout(UiSlider(self, "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
+        layout.addWidget(QLabel("GPU层数 -ngl"))
+        layout.addLayout(UiSlider(self, "gpu_layers", 200, 0, 200, 1))
 
         # 替换原有的上下文长度设置
         layout.addWidget(QLabel("上下文长度 -c"))

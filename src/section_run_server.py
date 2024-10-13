@@ -68,7 +68,7 @@ class RunServerSection(RunSection):
 
         layout.addLayout(UiRow("上下文长度 -c", self._create_context_length_layout()))
         layout.addLayout(
-            UiRow("工作线程数量 -np", UiSlider(self, "n_parallel", 1, 1, 32, 1))
+            UiRow("工作线程数量 -np", UiSlider(self, "n_parallel", 1, 1, 32, 1, spinbox_fixed_width=140))
         )
 
         self.context_per_thread_label = QLabel(self)
@@ -139,14 +139,18 @@ class RunServerSection(RunSection):
 
     def _init_advance_options(self, layout):
         layout_extra_options = QHBoxLayout()
+        
         self.is_sharing = UiCheckBox(self, "启动后自动开启共享", False)
         layout_extra_options.addWidget(self.is_sharing)
-
+        layout_extra_options.addStretch(1)  # 添加弹性空间
+        
         self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
         layout_extra_options.addWidget(self.flash_attention_check)
-
+        layout_extra_options.addStretch(1)  # 添加弹性空间
+        
         self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
         layout_extra_options.addWidget(self.no_mmap_check)
+        
         layout.addLayout(layout_extra_options)
 
         layout.addLayout(UiRow("配置预设选择", self._create_preset_options()))
@@ -183,6 +187,7 @@ class RunServerSection(RunSection):
         self.context_length_input.setRange(256, 131072)
         self.context_length_input.setSingleStep(256)
         self.context_length_input.setValue(2048)
+        self.context_length_input.setFixedWidth(140)
 
         layout.addWidget(self.context_length)
         layout.addWidget(self.context_length_input)

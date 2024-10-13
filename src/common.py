@@ -184,6 +184,7 @@ class RunSection(QFrame):
         self.model_path.setPlaceholderText("请选择模型路径")
         self.refresh_model_button = PushButton(FIF.SYNC, "刷新", self)
         self.refresh_model_button.clicked.connect(self.refresh_models)
+        self.refresh_model_button.setFixedWidth(140)
         layout.addWidget(self.model_path)
         layout.addWidget(self.refresh_model_button)
         return layout

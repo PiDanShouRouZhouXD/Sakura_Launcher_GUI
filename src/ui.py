@@ -85,6 +85,8 @@ def UiSlider(
     slider_min,
     slider_max,
     slider_step,
+    spinbox_fixed_width=None,
+    slider_fixed_width=None,
 ):
     h_layout = QHBoxLayout()
     slider = Slider(Qt.Horizontal, parent)
@@ -106,14 +108,27 @@ def UiSlider(
     setattr(parent, f"{variable_name.replace(' ', '_')}", slider)
     setattr(parent, f"{variable_name.replace(' ', '_')}_spinbox", spinbox)
 
+    if slider_fixed_width is not None:
+        slider.setFixedWidth(slider_fixed_width)
+    if spinbox_fixed_width is not None:
+        spinbox.setFixedWidth(spinbox_fixed_width)
+
     return h_layout
 
 
 def UiHLine(self):
     w = QFrame(self)
     w.setFrameShape(QFrame.HLine)
-    w.setFrameShadow(QFrame.Sunken)
+    w.setFrameShadow(QFrame.Plain)  # 改为Plain以去除阴影效果
     w.setFixedHeight(32)
+    # 使用更深的灰色作为背景色，并设置上下边距
+    w.setStyleSheet("""
+        background-color: #393939;
+        margin-top: 15px;
+        margin-bottom: 15px;
+        max-height: 1px;
+        border: none;  /* 去掉边框 */
+    """)
     return w
 
 

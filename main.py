@@ -237,8 +237,6 @@ class MainWindow(MSFluentWindow):
                 command += f" -npp {section.npp_input.text()}"
                 command += f" -ntg {section.ntg_input.text()}"
                 command += f" -npl {section.npl_input.text()}"
-                if section.pps_check.isChecked():
-                    command += " -pps"
                 if section.flash_attention_check.isChecked():
                     command += " -fa"
                 if section.no_mmap_check.isChecked():

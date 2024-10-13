@@ -3,20 +3,15 @@ import os
 import subprocess
 import logging
 from enum import Enum
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Signal, QObject
 from PySide6.QtWidgets import (
-    QVBoxLayout,
     QHBoxLayout,
-    QLabel,
     QFrame,
 )
 from qfluentwidgets import (
     PushButton,
-    CheckBox,
-    SpinBox,
     EditableComboBox,
     FluentIcon as FIF,
-    Slider,
     ComboBox,
     LineEdit,
 )

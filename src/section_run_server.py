@@ -30,10 +30,12 @@ class RunServerSection(RunSection):
 
     def _init_ui(self):
         layout_advance = QVBoxLayout()
+        layout_advance.setContentsMargins(0, 0, 0, 0)  # 确保布局的边距也被移除
         layout_advance.addWidget(UiHLine(self))
         self._init_advance_options(layout_advance)
         self._init_override_options(layout_advance)
         self.menu_advance = QFrame()
+        self.menu_advance.setContentsMargins(0, 0, 0, 0)  # 移除内部边距
         self.menu_advance.setLayout(layout_advance)
         self.menu_advance.setVisible(False)
 
@@ -51,14 +53,16 @@ class RunServerSection(RunSection):
         self.benchmark_button.setFixedSize(110, 30)
         buttons_layout.addWidget(self.benchmark_button)
 
+        # 新增运行并共享按钮
+        self.run_and_share_button = PushButton(FIF.IOT, "运行并共享", self)
+        self.run_and_share_button.setFixedSize(140, 30)
+        buttons_layout.addWidget(self.run_and_share_button)
+
         self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
         self.run_button.setFixedSize(110, 30)
         buttons_layout.addWidget(self.run_button)
 
-        # 新增运行并共享按钮
-        self.run_and_share_button = PrimaryPushButton(FIF.IOT, "运行并共享", self)
-        self.run_and_share_button.setFixedSize(140, 30)
-        buttons_layout.addWidget(self.run_and_share_button)
+
 
         buttons_group = QGroupBox("")
         buttons_group.setStyleSheet(
@@ -143,6 +147,7 @@ class RunServerSection(RunSection):
 
     def _init_advance_options(self, layout):
         layout_extra_options = QHBoxLayout()
+        layout_extra_options.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
         
         self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
         layout_extra_options.addWidget(self.flash_attention_check)

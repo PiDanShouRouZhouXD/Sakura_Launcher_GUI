@@ -15,6 +15,7 @@ from qfluentwidgets import (
 )
 
 from .common import CURRENT_DIR, CONFIG_FILE, RunSection
+from .ui import *
 
 
 class RunBatchBenchmarkSection(RunSection):
@@ -60,52 +61,47 @@ class RunBatchBenchmarkSection(RunSection):
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
         layout.addWidget(self.config_preset_combo)
 
-        layout.addLayout(
-            self._create_slider_spinbox_layout(
-                "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1
-            )
-        )
+        layout.addLayout(UiSlider(self, "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
 
         # 替换原有的上下文长度设置
         layout.addWidget(QLabel("上下文长度 -c"))
         layout.addLayout(self._create_context_length_layout())
 
         layout.addWidget(QLabel("Prompt数量 -npp"))
-        self.npp_input = self._create_line_edit(
-            "Prompt数量，多个值用英文逗号分隔，如： 128,256,512", "128,256,512"
+        self.npp_input = UiLineEdit(
+            self, "Prompt数量，多个值用英文逗号分隔，如： 128,256,512", "128,256,512"
         )
         layout.addWidget(self.npp_input)
 
         layout.addWidget(QLabel("生成文本（text generation）数量 -ntg"))
-        self.ntg_input = self._create_line_edit(
+        self.ntg_input = UiLineEdit(
+            self,
             "生成文本（text generation）数量，多个值用英文逗号分隔，如： 128,256",
             "128,256",
         )
         layout.addWidget(self.ntg_input)
 
         layout.addWidget(QLabel("并行Prompt数量 -npl"))
-        self.npl_input = self._create_line_edit(
-            "并行Prompt数量，多个值用英文逗号分隔，如： 1,2,4,8,16,32", "1,2,4,8,16,32"
+        self.npl_input = UiLineEdit(
+            self,
+            "并行Prompt数量，多个值用英文逗号分隔，如： 1,2,4,8,16,32",
+            "1,2,4,8,16,32",
         )
         layout.addWidget(self.npl_input)
 
-        self.pps_check = self._create_check_box("Prompt共享 -pps", False)
+        self.pps_check = UiCheckBox(self, "Prompt共享 -pps", False)
         layout.addWidget(self.pps_check)
 
-        self.flash_attention_check = self._create_check_box(
-            "启用 Flash Attention -fa", True
-        )
+        self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
         layout.addWidget(self.flash_attention_check)
 
-        self.no_mmap_check = self._create_check_box("启用 --no-mmap", True)
+        self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
         layout.addWidget(self.no_mmap_check)
 
         layout.addLayout(self._create_gpu_selection_layout())
 
         # 新增llamacpp覆盖选项
-        self.llamacpp_override = self._create_line_edit(
-            "覆盖默认llamacpp路径（可选）", ""
-        )
+        self.llamacpp_override = UiLineEdit(self, "覆盖默认llamacpp路径（可选）", "")
         layout.addWidget(QLabel("覆盖默认llamacpp路径"))
         layout.addWidget(self.llamacpp_override)
 

@@ -12,6 +12,7 @@ from qfluentwidgets import (
 )
 
 from .common import CURRENT_DIR, CONFIG_FILE, RunSection
+from .ui import *
 
 
 class RunBenchmarkSection(RunSection):
@@ -57,26 +58,18 @@ class RunBenchmarkSection(RunSection):
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
         layout.addWidget(self.config_preset_combo)
 
-        layout.addLayout(
-            self._create_slider_spinbox_layout(
-                "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1
-            )
-        )
+        layout.addLayout(UiSlider(self, "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
 
-        self.flash_attention_check = self._create_check_box(
-            "启用 Flash Attention -fa", True
-        )
+        self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
         layout.addWidget(self.flash_attention_check)
 
-        self.no_mmap_check = self._create_check_box("启用 --no-mmap", True)
+        self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
         layout.addWidget(self.no_mmap_check)
 
         layout.addLayout(self._create_gpu_selection_layout())
 
         # 新增llamacpp覆盖选项
-        self.llamacpp_override = self._create_line_edit(
-            "覆盖默认llamacpp路径（可选）", ""
-        )
+        self.llamacpp_override = UiLineEdit(self, "覆盖默认llamacpp路径（可选）", "")
         layout.addWidget(QLabel("覆盖默认llamacpp路径"))
         layout.addWidget(self.llamacpp_override)
 

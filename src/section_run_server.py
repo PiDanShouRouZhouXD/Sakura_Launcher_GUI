@@ -15,6 +15,7 @@ from qfluentwidgets import (
 )
 
 from .common import CURRENT_DIR, CONFIG_FILE, RunSection
+from .ui import *
 
 
 class RunServerSection(RunSection):
@@ -69,7 +70,7 @@ class RunServerSection(RunSection):
         ip_layout.addWidget(self.host_input)
 
         host_layout = QVBoxLayout()
-        self.port_input = self._create_line_edit("", "8080")
+        self.port_input = UiLineEdit(self, "", "8080")
         host_layout.addWidget(QLabel("端口 --port"))
         host_layout.addWidget(self.port_input)
 
@@ -86,41 +87,31 @@ class RunServerSection(RunSection):
 
         layout.addLayout(ip_port_log_layout)
 
-        layout.addLayout(
-            self._create_slider_spinbox_layout(
-                "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1
-            )
-        )
+        layout.addLayout(UiSlider(self, "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1))
 
         layout.addWidget(QLabel("上下文长度 -c"))
         layout.addLayout(self._create_context_length_layout())
 
         layout.addLayout(
-            self._create_slider_spinbox_layout(
-                "并行工作线程数 -np", "n_parallel", 1, 1, 32, 1
-            )
+            UiSlider(self, "并行工作线程数 -np", "n_parallel", 1, 1, 32, 1)
         )
 
         self.context_per_thread_label = QLabel(self)
         layout.addWidget(self.context_per_thread_label)
 
-        self.flash_attention_check = self._create_check_box(
-            "启用 Flash Attention -fa", True
-        )
+        self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
         layout.addWidget(self.flash_attention_check)
 
-        self.no_mmap_check = self._create_check_box("启用 --no-mmap", True)
+        self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
         layout.addWidget(self.no_mmap_check)
 
-        self.is_sharing = self._create_check_box("启动后自动开启共享", False)
+        self.is_sharing = UiCheckBox(self, "启动后自动开启共享", False)
         layout.addWidget(self.is_sharing)
 
         layout.addLayout(self._create_gpu_selection_layout())
 
         # 新增llamacpp覆盖选项
-        self.llamacpp_override = self._create_line_edit(
-            "覆盖默认llamacpp路径（可选）", ""
-        )
+        self.llamacpp_override = UiLineEdit(self, "覆盖默认llamacpp路径（可选）", "")
         layout.addWidget(QLabel("覆盖默认llamacpp路径"))
         layout.addWidget(self.llamacpp_override)
 

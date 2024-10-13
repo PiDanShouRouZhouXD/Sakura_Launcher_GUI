@@ -44,7 +44,7 @@ class RunServerSection(RunSection):
 
         self.advance_button = PushButton(FIF.MORE, "高级设置", self)
         self.advance_button.setFixedSize(110, 30)
-        self.advance_button.clicked.connect(self.toggle_advanced_settings)  # 修改连接的方法
+        self.advance_button.clicked.connect(self.toggle_advanced_settings)
         buttons_layout.addWidget(self.advance_button)
 
         self.benchmark_button = PushButton(FIF.UNIT, "性能测试", self)
@@ -54,6 +54,11 @@ class RunServerSection(RunSection):
         self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
         self.run_button.setFixedSize(110, 30)
         buttons_layout.addWidget(self.run_button)
+
+        # 新增运行并共享按钮
+        self.run_and_share_button = PrimaryPushButton(FIF.IOT, "运行并共享", self)
+        self.run_and_share_button.setFixedSize(140, 30)
+        buttons_layout.addWidget(self.run_and_share_button)
 
         buttons_group = QGroupBox("")
         buttons_group.setStyleSheet(
@@ -139,13 +144,9 @@ class RunServerSection(RunSection):
     def _init_advance_options(self, layout):
         layout_extra_options = QHBoxLayout()
         
-        self.is_sharing = UiCheckBox(self, "启动后自动开启共享", False)
-        layout_extra_options.addWidget(self.is_sharing)
-        layout_extra_options.addStretch(1)  # 添加弹性空间
-        
         self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
         layout_extra_options.addWidget(self.flash_attention_check)
-        layout_extra_options.addStretch(1)  # 添加弹性空间
+        layout_extra_options.addStretch(1)
         
         self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
         layout_extra_options.addWidget(self.no_mmap_check)
@@ -270,7 +271,6 @@ class RunServerSection(RunSection):
                 "ntg": self.ntg_input.text(),
                 "npl": self.npl_input.text(),
                 "llamacpp_override": self.llamacpp_override.text(),
-                "is_sharing": self.is_sharing.isChecked(),
             },
         }
 
@@ -333,7 +333,6 @@ class RunServerSection(RunSection):
                     self.gpu_combo.setCurrentText(config.get("gpu", ""))
                     self.manully_select_gpu_index.setText(config.get("gpu_index", ""))
                     self.llamacpp_override.setText(config.get("llamacpp_override", ""))
-                    self.is_sharing.setChecked(config.get("is_sharing", False))
                     self.update_context_per_thread()
                     break
 

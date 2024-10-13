@@ -67,6 +67,7 @@ class MainWindow(MSFluentWindow):
 
     def init_window(self):
         self.run_server_section.run_button.clicked.connect(self.run_llamacpp_server)
+        self.run_server_section.run_and_share_button.clicked.connect(self.run_llamacpp_server_and_share)
         self.run_server_section.benchmark_button.clicked.connect(self.run_llamacpp_batch_bench)
         self.run_server_section.load_preset_button.clicked.connect(
             self.run_server_section.load_presets
@@ -134,6 +135,14 @@ class MainWindow(MSFluentWindow):
 
     def run_llamacpp_server(self):
         self._run_llamacpp(self.run_server_section, "server", "llama-server")
+
+    def run_llamacpp_server_and_share(self):
+        self._run_llamacpp(self.run_server_section, "server", "llama-server")
+        cf_share_url = self.cf_share_section.worker_url_input.text()
+        if not cf_share_url:
+            MessageBox("错误", "分享链接不能为空", self).exec()
+            return
+        QTimer.singleShot(18000, self.cf_share_section.start_cf_share)
 
     def run_llamacpp_batch_bench(self):
         self._run_llamacpp(self.run_server_section, "llama-batched-bench")
@@ -280,13 +289,6 @@ class MainWindow(MSFluentWindow):
                 return
 
         self.log_info("命令已在新的终端窗口中启动。")
-
-        if hasattr(section, "is_sharing") and section.is_sharing.isChecked():
-            cf_share_url = self.cf_share_section.worker_url_input.text()
-            if not cf_share_url:
-                MessageBox("错误", "分享链接不能为空", self).exec()
-                return
-            QTimer.singleShot(25000, self.cf_share_section.start_cf_share)
 
     def find_terminal(self):
         terminals = [

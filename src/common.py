@@ -3,18 +3,25 @@ import os
 import subprocess
 import logging
 from enum import Enum
-from PySide6.QtCore import Signal, QObject
+from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtWidgets import (
+    QVBoxLayout,
     QHBoxLayout,
+    QLabel,
     QFrame,
 )
 from qfluentwidgets import (
     PushButton,
+    CheckBox,
+    SpinBox,
     EditableComboBox,
     FluentIcon as FIF,
+    Slider,
     ComboBox,
     LineEdit,
 )
+
+from ui import UiCheckBox
 
 
 logging.basicConfig(level=logging.INFO)
@@ -95,34 +102,31 @@ class GPUManager:
         else:
             return GPUType.UNKNOWN
 
-    def set_gpu_env(self, selected_gpu, selected_index, manual_index=None):
+    def set_gpu_env(self, env, selected_gpu, selected_index, manual_index=None):
         gpu_type = self.get_gpu_type(selected_gpu)
         if manual_index == "":
             manual_index = None
         if gpu_type == GPUType.NVIDIA:
             if manual_index is not None:
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(manual_index)
+                env["CUDA_VISIBLE_DEVICES"] = str(manual_index)
                 logging.info(f"设置 CUDA_VISIBLE_DEVICES = {manual_index}")
             else:
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_index)
+                env["CUDA_VISIBLE_DEVICES"] = str(selected_index)
                 logging.info(f"设置 CUDA_VISIBLE_DEVICES = {selected_index}")
         elif gpu_type == GPUType.AMD:
             if manual_index is not None:
-                os.environ["HIP_VISIBLE_DEVICES"] = str(
-                    manual_index - len(self.nvidia_gpus)
-                )
+                env["HIP_VISIBLE_DEVICES"] = str(manual_index - len(self.nvidia_gpus))
                 logging.info(
                     f"设置 HIP_VISIBLE_DEVICES = {manual_index - len(self.nvidia_gpus)}"
                 )
             else:
-                os.environ["HIP_VISIBLE_DEVICES"] = str(
-                    selected_index - len(self.nvidia_gpus)
-                )
+                env["HIP_VISIBLE_DEVICES"] = str(selected_index - len(self.nvidia_gpus))
                 logging.info(
                     f"设置 HIP_VISIBLE_DEVICES = {selected_index - len(self.nvidia_gpus)}"
                 )
         else:
             logging.warning(f"未知的GPU类型: {selected_gpu}")
+        return env
 
 
 class LlamaCPPWorker(QObject):

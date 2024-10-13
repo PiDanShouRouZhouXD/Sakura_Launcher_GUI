@@ -262,13 +262,16 @@ class MainWindow(MSFluentWindow):
                 if section.custom_command_append.toPlainText().strip():
                     command += f" {section.custom_command_append.toPlainText().strip()}"
 
+        env = os.environ.copy()
         if section.gpu_combo.currentText() != "自动":
             selected_gpu = section.gpu_combo.currentText()
             selected_index = section.gpu_combo.currentIndex()
             manual_index = section.manully_select_gpu_index.text()
 
             try:
-                self.gpu_manager.set_gpu_env(selected_gpu, selected_index, manual_index)
+                self.gpu_manager.set_gpu_env(
+                    env, selected_gpu, selected_index, manual_index
+                )
             except Exception as e:
                 self.log_info(f"设置GPU环境变量时出错: {str(e)}")
                 MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
@@ -279,14 +282,14 @@ class MainWindow(MSFluentWindow):
         # 在运行命令的部分
         if sys.platform == "win32":
             command = f'start cmd /K "{command}"'
-            subprocess.Popen(command, shell=True)
+            subprocess.Popen(command, env=env, shell=True)
         else:
             terminal = self.find_terminal()
             if terminal:
                 if terminal == "gnome-terminal":
-                    subprocess.Popen([terminal, "--", "bash", "-c", command])
+                    subprocess.Popen([terminal, "--", "bash", "-c", command], env=env)
                 else:
-                    subprocess.Popen([terminal, "-e", command])
+                    subprocess.Popen([terminal, "-e", command], env=env)
             else:
                 MessageBox(
                     "错误", "无法找到合适的终端模拟器。请手动运行命令。", self

@@ -1,18 +1,73 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget
-from qfluentwidgets import (
-    CheckBox,
-    SpinBox,
-    Slider,
-    LineEdit,
+from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QFrame
+from qfluentwidgets import CheckBox, FluentStyleSheet, LineEdit, Slider, SpinBox
+from qfluentwidgets.common.style_sheet import (
+    StyleSheetManager, getStyleSheet, StyleSheetCompose, CustomStyleSheet
 )
+from qfluentwidgets.common.config import qconfig
 
+class CustomStyleSheetManager(StyleSheetManager):
+    def addCustomStyle(self, widget: QWidget, customStyle: str):
+        """ 添加自定义样式到小部件，而不覆盖现有样式 """
+        if widget in self.widgets:
+            source = self.widgets[widget]
+            if isinstance(source, StyleSheetCompose):
+                custom_source = next((s for s in source.sources if isinstance(s, CustomStyleSheet)), None)
+                if custom_source:
+                    existing_style = custom_source.content()
+                    new_style = existing_style + '\n' + customStyle
+                    custom_source.setCustomStyleSheet(new_style, new_style)
+                else:
+                    custom_source = CustomStyleSheet(widget)
+                    custom_source.setCustomStyleSheet(customStyle, customStyle)
+                    source.add(custom_source)
+            else:
+                custom_source = CustomStyleSheet(widget)
+                custom_source.setCustomStyleSheet(customStyle, customStyle)
+                self.widgets[widget] = StyleSheetCompose([source, custom_source])
+        else:
+            custom_source = CustomStyleSheet(widget)
+            custom_source.setCustomStyleSheet(customStyle, customStyle)
+            self.register(custom_source, widget)
+
+        self.updateWidgetStyleSheet(widget)
+
+    def updateWidgetStyleSheet(self, widget: QWidget):
+        """ 更新特定小部件的样式表 """
+        if widget in self.widgets:
+            source = self.widgets[widget]
+            widget.setStyleSheet(getStyleSheet(source, qconfig.theme))
+
+# 创建自定义样式表管理器的实例
+custom_style_manager = CustomStyleSheetManager()
+
+def addCustomWidgetStyle(widget: QWidget, customStyle: str):
+    """ 添加自定义样式到小部件，而不覆盖现有样式 """
+    custom_style_manager.addCustomStyle(widget, customStyle)
 
 def UiCheckBox(parent, text, checked):
     w = CheckBox(parent)
     w.setText(text)
     w.setChecked(checked)
-    w.setStyleSheet("font-size: 12px")
+    
+    # 注册默认样式
+    custom_style_manager.register(FluentStyleSheet.CHECK_BOX, w)
+    
+    # 设置 CheckBox 的大小
+    checkbox_size = 12  # 可以根据需要调整这个值
+    w.setIconSize(QSize(checkbox_size, checkbox_size))
+    
+    # 添加自定义样式（在下一个事件循环中应用，以确保覆盖其他样式）
+    QTimer.singleShot(0, lambda: addCustomWidgetStyle(w, f"""
+        QCheckBox {{
+            font-size: 12px !important;
+        }}
+        QCheckBox::indicator {{
+            width: {checkbox_size}px;
+            height: {checkbox_size}px;
+        }}
+    """))
+    
     return w
 
 

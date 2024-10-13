@@ -21,6 +21,7 @@ from qfluentwidgets import (
 )
 
 from .common import CLOUDFLARED, CONFIG_FILE, RunSection, get_resource_path
+from .ui import *
 
 
 class CFShareWorker(QThread):
@@ -167,8 +168,8 @@ class CFShareSection(RunSection):
         layout.addWidget(buttons_group)
 
         layout.addWidget(QLabel("WORKER_URL:"))
-        self.worker_url_input = self._create_line_edit(
-            "输入WORKER_URL", "https://sakura-share.one"
+        self.worker_url_input = UiLineEdit(
+            self, "输入WORKER_URL", "https://sakura-share.one"
         )
         layout.addWidget(self.worker_url_input)
 

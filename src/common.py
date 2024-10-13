@@ -21,6 +21,8 @@ from qfluentwidgets import (
     LineEdit,
 )
 
+from ui import UiCheckBox
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -176,13 +178,9 @@ class RunSection(QFrame):
         self.setObjectName(title.replace(" ", "-"))
         self.title = title
 
-    def _init_common_ui(self, layout):
-        # 跳过
-        pass
-
     def _create_gpu_selection_layout(self):
         layout = QHBoxLayout()
-        self.gpu_enabled_check = self._create_check_box("单GPU启动", True)
+        self.gpu_enabled_check = UiCheckBox(self, "单GPU启动", True)
         self.gpu_enabled_check.stateChanged.connect(self.toggle_gpu_selection)
         self.gpu_combo = ComboBox(self)
         self.manully_select_gpu_index = LineEdit(self)
@@ -191,48 +189,6 @@ class RunSection(QFrame):
         layout.addWidget(self.gpu_enabled_check)
         layout.addWidget(self.manully_select_gpu_index)
         layout.addWidget(self.gpu_combo)
-        return layout
-
-    def _create_line_edit(self, placeholder, text):
-        line_edit = LineEdit(self)
-        line_edit.setPlaceholderText(placeholder)
-        line_edit.setText(text)
-        return line_edit
-
-    def _create_slider_spinbox_layout(
-        self,
-        label_text,
-        variable_name,
-        slider_value,
-        slider_min,
-        slider_max,
-        slider_step,
-    ):
-        layout = QVBoxLayout()
-        label = QLabel(label_text)
-        layout.addWidget(label)
-
-        h_layout = QHBoxLayout()
-        slider = Slider(Qt.Horizontal, self)
-        slider.setRange(slider_min, slider_max)
-        slider.setPageStep(slider_step)
-        slider.setValue(slider_value)
-
-        spinbox = SpinBox(self)
-        spinbox.setRange(slider_min, slider_max)
-        spinbox.setSingleStep(slider_step)
-        spinbox.setValue(slider_value)
-
-        slider.valueChanged.connect(spinbox.setValue)
-        spinbox.valueChanged.connect(slider.setValue)
-
-        h_layout.addWidget(slider)
-        h_layout.addWidget(spinbox)
-        layout.addLayout(h_layout)
-
-        setattr(self, f"{variable_name.replace(' ', '_')}", slider)
-        setattr(self, f"{variable_name.replace(' ', '_')}_spinbox", spinbox)
-
         return layout
 
     def _create_model_selection_layout(self):
@@ -244,11 +200,6 @@ class RunSection(QFrame):
         layout.addWidget(self.model_path)
         layout.addWidget(self.refresh_model_button)
         return layout
-
-    def _create_check_box(self, text, checked):
-        check_box = CheckBox(text, self)
-        check_box.setChecked(checked)
-        return check_box
 
     def _create_editable_combo_box(self, items):
         combo_box = EditableComboBox(self)

@@ -16,6 +16,7 @@ from qfluentwidgets import (
 )
 
 from .common import CONFIG_FILE
+from .ui import *
 
 
 class SettingsSection(QFrame):
@@ -29,8 +30,10 @@ class SettingsSection(QFrame):
     def _init_ui(self):
         layout = QVBoxLayout()
 
-        self.llamacpp_path = self._create_line_edit(
-            "llama.cpp二进制文件所在的路径（可选），留空则为当前目录下的llama文件夹", ""
+        self.llamacpp_path = UiLineEdit(
+            self,
+            "llama.cpp二进制文件所在的路径（可选），留空则为当前目录下的llama文件夹",
+            "",
         )
         layout.addWidget(QLabel("llama.cpp 文件夹"))
         layout.addWidget(self.llamacpp_path)
@@ -60,12 +63,6 @@ class SettingsSection(QFrame):
         layout.addWidget(self.load_settings_button)
 
         self.setLayout(layout)
-
-    def _create_line_edit(self, placeholder, text):
-        line_edit = LineEdit(self)
-        line_edit.setPlaceholderText(placeholder)
-        line_edit.setText(text)
-        return line_edit
 
     def save_settings(self):
         settings = {

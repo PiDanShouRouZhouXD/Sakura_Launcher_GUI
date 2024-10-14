@@ -23,8 +23,6 @@ from qfluentwidgets import (
 
 from src.common import *
 from src.section_run_server import RunServerSection
-from src.section_run_benchmark import RunBenchmarkSection
-from src.section_batch_benchmark import RunBatchBenchmarkSection
 from src.section_download import DownloadSection
 from src.section_log import LogSection
 from src.section_share import CFShareSection
@@ -48,26 +46,18 @@ class MainWindow(MSFluentWindow):
 
     def init_navigation(self):
         self.settings_section = SettingsSection("设置", self)
-        self.run_server_section = RunServerSection("运行server", self)
-        self.run_bench_section = RunBenchmarkSection("运行bench", self)
-        self.run_llamacpp_batch_bench_section = RunBatchBenchmarkSection(
-            "批量运行bench", self
-        )
+        self.run_server_section = RunServerSection("运行", self)
         self.log_section = LogSection("日志输出")
         self.about_section = AboutSection("关于")
         self.config_editor_section = ConfigEditor("配置编辑", self)
         self.dowload_section = DownloadSection("下载", self)
         self.cf_share_section = CFShareSection("共享", self)
 
-        self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行server")
-        self.addSubInterface(self.run_bench_section, FIF.COMMAND_PROMPT, "运行bench")
-        self.addSubInterface(
-            self.run_llamacpp_batch_bench_section, FIF.COMMAND_PROMPT, "batch-bench"
-        )
+        self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行")
         self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
         self.addSubInterface(self.config_editor_section, FIF.EDIT, "配置编辑")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
-        self.addSubInterface(self.cf_share_section, FIF.SHARE, "共享")
+        self.addSubInterface(self.cf_share_section, FIF.IOT, "共享")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
         self.addSubInterface(
             self.about_section, FIF.INFO, "关于", position=NavigationItemPosition.BOTTOM
@@ -77,27 +67,13 @@ class MainWindow(MSFluentWindow):
 
     def init_window(self):
         self.run_server_section.run_button.clicked.connect(self.run_llamacpp_server)
-        self.run_bench_section.run_button.clicked.connect(self.run_llamacpp_bench)
-        self.run_llamacpp_batch_bench_section.run_button.clicked.connect(
-            self.run_llamacpp_batch_bench
-        )
+        self.run_server_section.run_and_share_button.clicked.connect(self.run_llamacpp_server_and_share)
+        self.run_server_section.benchmark_button.clicked.connect(self.run_llamacpp_batch_bench)
         self.run_server_section.load_preset_button.clicked.connect(
             self.run_server_section.load_presets
         )
-        self.run_bench_section.load_preset_button.clicked.connect(
-            self.run_bench_section.load_presets
-        )
-        self.run_llamacpp_batch_bench_section.load_preset_button.clicked.connect(
-            self.run_llamacpp_batch_bench_section.load_presets
-        )
         self.run_server_section.refresh_model_button.clicked.connect(
             self.run_server_section.refresh_models
-        )
-        self.run_bench_section.refresh_model_button.clicked.connect(
-            self.run_bench_section.refresh_models
-        )
-        self.run_llamacpp_batch_bench_section.refresh_model_button.clicked.connect(
-            self.run_llamacpp_batch_bench_section.refresh_models
         )
 
         # 连接设置更改信号
@@ -132,8 +108,6 @@ class MainWindow(MSFluentWindow):
 
     def refresh_all_model_lists(self):
         self.run_server_section.refresh_models()
-        self.run_bench_section.refresh_models()
-        self.run_llamacpp_batch_bench_section.refresh_models()
 
     def createSuccessInfoBar(self, title, content):
         InfoBar.success(
@@ -162,11 +136,16 @@ class MainWindow(MSFluentWindow):
     def run_llamacpp_server(self):
         self._run_llamacpp(self.run_server_section, "server", "llama-server")
 
-    def run_llamacpp_bench(self):
-        self._run_llamacpp(self.run_bench_section, "llama-bench")
+    def run_llamacpp_server_and_share(self):
+        self._run_llamacpp(self.run_server_section, "server", "llama-server")
+        cf_share_url = self.cf_share_section.worker_url_input.text()
+        if not cf_share_url:
+            MessageBox("错误", "分享链接不能为空", self).exec()
+            return
+        QTimer.singleShot(18000, self.cf_share_section.start_cf_share)
 
     def run_llamacpp_batch_bench(self):
-        self._run_llamacpp(self.run_llamacpp_batch_bench_section, "llama-batched-bench")
+        self._run_llamacpp(self.run_server_section, "llama-batched-bench")
 
     def get_llamacpp_version(self, executable_path):
         try:
@@ -267,8 +246,6 @@ class MainWindow(MSFluentWindow):
                 command += f" -npp {section.npp_input.text()}"
                 command += f" -ntg {section.ntg_input.text()}"
                 command += f" -npl {section.npl_input.text()}"
-                if section.pps_check.isChecked():
-                    command += " -pps"
                 if section.flash_attention_check.isChecked():
                     command += " -fa"
                 if section.no_mmap_check.isChecked():
@@ -276,13 +253,16 @@ class MainWindow(MSFluentWindow):
                 if section.custom_command_append.toPlainText().strip():
                     command += f" {section.custom_command_append.toPlainText().strip()}"
 
-        if section.gpu_enabled_check.isChecked():
+        env = os.environ.copy()
+        if section.gpu_combo.currentText() != "自动":
             selected_gpu = section.gpu_combo.currentText()
             selected_index = section.gpu_combo.currentIndex()
             manual_index = section.manully_select_gpu_index.text()
 
             try:
-                self.gpu_manager.set_gpu_env(selected_gpu, selected_index, manual_index)
+                self.gpu_manager.set_gpu_env(
+                    env, selected_gpu, selected_index, manual_index
+                )
             except Exception as e:
                 self.log_info(f"设置GPU环境变量时出错: {str(e)}")
                 MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
@@ -293,14 +273,14 @@ class MainWindow(MSFluentWindow):
         # 在运行命令的部分
         if sys.platform == "win32":
             command = f'start cmd /K "{command}"'
-            subprocess.Popen(command, shell=True)
+            subprocess.Popen(command, env=env, shell=True)
         else:
             terminal = self.find_terminal()
             if terminal:
                 if terminal == "gnome-terminal":
-                    subprocess.Popen([terminal, "--", "bash", "-c", command])
+                    subprocess.Popen([terminal, "--", "bash", "-c", command], env=env)
                 else:
-                    subprocess.Popen([terminal, "-e", command])
+                    subprocess.Popen([terminal, "-e", command], env=env)
             else:
                 MessageBox(
                     "错误", "无法找到合适的终端模拟器。请手动运行命令。", self
@@ -309,13 +289,6 @@ class MainWindow(MSFluentWindow):
                 return
 
         self.log_info("命令已在新的终端窗口中启动。")
-
-        if hasattr(section, "is_sharing") and section.is_sharing.isChecked():
-            cf_share_url = self.cf_share_section.worker_url_input.text()
-            if not cf_share_url:
-                MessageBox("错误", "分享链接不能为空", self).exec()
-                return
-            QTimer.singleShot(25000, self.cf_share_section.start_cf_share)
 
     def find_terminal(self):
         terminals = [
@@ -336,6 +309,7 @@ class MainWindow(MSFluentWindow):
 
     def closeEvent(self, event):
         self.save_window_state()
+        self.save_advanced_state()  # 新增：保存高级设置状态
         self.terminate_all_processes()
         event.accept()
 
@@ -356,8 +330,6 @@ class MainWindow(MSFluentWindow):
     def refresh_gpus(self):
         self.gpu_manager.detect_gpus()
         self.run_server_section.refresh_gpus()
-        self.run_bench_section.refresh_gpus()
-        self.run_llamacpp_batch_bench_section.refresh_gpus()
 
         if not self.gpu_manager.nvidia_gpus and not self.gpu_manager.amd_gpus:
             self.log_info("未检测到NVIDIA或AMD GPU")
@@ -375,6 +347,15 @@ class MainWindow(MSFluentWindow):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
             config_data.update(settings)
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=4)
+
+    def save_advanced_state(self):
+        if self.settings_section.remember_advanced_state.isChecked():
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                config_data = json.load(f)
+            if self.settings_section.remember_advanced_state.isChecked():
+                config_data["advanced_state"] = self.run_server_section.get_advanced_state()
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, ensure_ascii=False, indent=4)
 

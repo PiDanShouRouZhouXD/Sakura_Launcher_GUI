@@ -197,50 +197,33 @@ class RunServerSection(QFrame):
         return preset_layout
 
     def _create_ip_port_log_option(self):
-        ip_port_log_layout = QHBoxLayout()
-
-        ip_layout = QVBoxLayout()
         self.host_input = UiEditableComboBox(self, ["127.0.0.1", "0.0.0.0"])
-        ip_layout.addWidget(QLabel("主机地址 --host"))
-        ip_layout.addWidget(self.host_input)
-
-        host_layout = QVBoxLayout()
         self.port_input = UiLineEdit(self, "", "8080")
-        host_layout.addWidget(QLabel("端口 --port"))
-        host_layout.addWidget(self.port_input)
-
-        log_layout = QVBoxLayout()
         self.log_format_combo = UiEditableComboBox(self, ["none", "text", "json"])
-        log_layout.addWidget(QLabel("日志格式 --log-format"))
-        log_layout.addWidget(self.log_format_combo)
-
-        ip_port_log_layout.addLayout(ip_layout)
-        ip_port_log_layout.addLayout(host_layout)
-        ip_port_log_layout.addLayout(log_layout)
-
-        return ip_port_log_layout
+        return UiCol3(
+            UiCol("主机地址 --host", self.host_input),
+            UiCol("端口 --port", self.port_input),
+            UiCol("日志格式 --log-format", self.log_format_combo),
+        )
 
     def _create_benchmark_layout(self):
-        layout = QHBoxLayout()
         self.npp_input = UiLineEdit(self, "Prompt数量", "768")
         self.ntg_input = UiLineEdit(self, "生成文本数量", "384")
         self.npl_input = UiLineEdit(self, "并行Prompt数量", "1,2,4,8,16")
-        layout.addLayout(UiCol("Prompt数量 -npp", self.npp_input))
-        layout.addLayout(UiCol("生成文本数量 -ntg", self.ntg_input))
-        layout.addLayout(UiCol("并行Prompt数量 -npl", self.npl_input))
-        return layout
+        return UiCol3(
+            UiCol("Prompt数量 -npp", self.npp_input),
+            UiCol("生成文本数量 -ntg", self.ntg_input),
+            UiCol("并行Prompt数量 -npl", self.npl_input),
+        )
 
     def _init_advance_options(self, layout):
-        layout_extra_options = QHBoxLayout()
-        layout_extra_options.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
-
         self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
-        layout_extra_options.addWidget(self.flash_attention_check)
-        layout_extra_options.addStretch(1)
-
         self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
-        layout_extra_options.addWidget(self.no_mmap_check)
-
+        layout_extra_options = UiCol3(
+            self.flash_attention_check,
+            self.no_mmap_check,
+        )
+        layout_extra_options.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
         layout.addLayout(layout_extra_options)
 
         layout.addLayout(UiRow("配置预设选择", self._create_preset_options()))

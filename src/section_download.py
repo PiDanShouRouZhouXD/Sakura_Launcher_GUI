@@ -23,7 +23,7 @@ from qfluentwidgets import (
     ProgressBar,
 )
 
-from .common import CURRENT_DIR, get_self_path, logger
+from .common import CURRENT_DIR, get_self_path
 
 
 class DownloadThread(QThread):
@@ -423,7 +423,7 @@ class DownloadSection(QFrame):
         return sha256_hash.hexdigest() == expected_sha256
 
     def on_download_error(self, error_message):
-        logger.error(f"Download error: {error_message}")
+        self.main_window.log_info(f"Download error: {error_message}")
         QApplication.processEvents()  # 确保UI更新
         MessageBox("错误", f"下载失败: {error_message}", self).exec()
 

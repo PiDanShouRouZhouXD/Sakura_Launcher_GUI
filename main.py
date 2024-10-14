@@ -22,7 +22,7 @@ from qfluentwidgets import (
 )
 
 from src.common import *
-from src.section_run_server import RunServerSection
+from src.section_run_server import GPUManager, RunServerSection
 from src.section_download import DownloadSection
 from src.section_log import LogSection
 from src.section_share import CFShareSection
@@ -67,8 +67,12 @@ class MainWindow(MSFluentWindow):
 
     def init_window(self):
         self.run_server_section.run_button.clicked.connect(self.run_llamacpp_server)
-        self.run_server_section.run_and_share_button.clicked.connect(self.run_llamacpp_server_and_share)
-        self.run_server_section.benchmark_button.clicked.connect(self.run_llamacpp_batch_bench)
+        self.run_server_section.run_and_share_button.clicked.connect(
+            self.run_llamacpp_server_and_share
+        )
+        self.run_server_section.benchmark_button.clicked.connect(
+            self.run_llamacpp_batch_bench
+        )
         self.run_server_section.load_preset_button.clicked.connect(
             self.run_server_section.load_presets
         )
@@ -78,7 +82,7 @@ class MainWindow(MSFluentWindow):
 
         # 连接设置更改信号
         self.settings_section.model_sort_combo.currentIndexChanged.connect(
-            self.refresh_all_model_lists
+            self.run_server_section.refresh_models
         )
 
         self.setStyleSheet(
@@ -105,9 +109,6 @@ class MainWindow(MSFluentWindow):
         desktop = QApplication.screens()[0].availableGeometry()
         w, h = desktop.width(), desktop.height()
         self.move(w // 2 - self.width() // 2, h // 2 - self.height() // 2)
-
-    def refresh_all_model_lists(self):
-        self.run_server_section.refresh_models()
 
     def createSuccessInfoBar(self, title, content):
         InfoBar.success(
@@ -155,7 +156,7 @@ class MainWindow(MSFluentWindow):
                 capture_output=True,
                 text=True,
                 timeout=2,
-                shell=True
+                shell=True,
             )
             version_output = result.stderr.strip()  # 使用 stderr 而不是 stdout
             self.log_info(f"版本输出: {version_output}")
@@ -355,7 +356,9 @@ class MainWindow(MSFluentWindow):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
             if self.settings_section.remember_advanced_state.isChecked():
-                config_data["advanced_state"] = self.run_server_section.get_advanced_state()
+                config_data["advanced_state"] = (
+                    self.run_server_section.get_advanced_state()
+                )
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, ensure_ascii=False, indent=4)
 

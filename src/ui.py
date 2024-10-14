@@ -162,21 +162,36 @@ def UiEditableComboBox(parent, items):
     return combo_box
 
 
-def UiRow(text, content):
-    layout = QHBoxLayout()
-    layout.addWidget(QLabel(text))
+def addWidgetOrLayout(layout, content):
     if issubclass(type(content), QWidget):
         layout.addWidget(content)
     else:
         layout.addLayout(content)
+
+
+def UiRow(text, content):
+    layout = QHBoxLayout()
+    layout.addWidget(QLabel(text))
+    addWidgetOrLayout(layout, content)
     return layout
 
 
 def UiCol(text, content):
     layout = QVBoxLayout()
     layout.addWidget(QLabel(text))
-    if issubclass(type(content), QWidget):
-        layout.addWidget(content)
+    addWidgetOrLayout(layout, content)
+    return layout
+
+
+def UiCol3(c1, c2, c3=None):
+    layout = QHBoxLayout()
+    addWidgetOrLayout(layout, c1)
+    addWidgetOrLayout(layout, c2)
+    layout.setStretchFactor(c1, 1.0)
+    layout.setStretchFactor(c2, 1.0)
+    if c3:
+        addWidgetOrLayout(layout, c3)
+        layout.setStretchFactor(c3, 1.0)
     else:
-        layout.addLayout(content)
+        layout.addStretch(1.0)
     return layout

@@ -3,20 +3,15 @@ import os
 import subprocess
 import logging
 from enum import Enum
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Signal, QObject
 from PySide6.QtWidgets import (
-    QVBoxLayout,
     QHBoxLayout,
-    QLabel,
     QFrame,
 )
 from qfluentwidgets import (
     PushButton,
-    CheckBox,
-    SpinBox,
     EditableComboBox,
     FluentIcon as FIF,
-    Slider,
     ComboBox,
     LineEdit,
 )
@@ -37,7 +32,8 @@ def get_self_path():
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     else:
-        return os.path.dirname(os.path.abspath(__file__))
+        # 当前文件的绝对路径的上一级目录
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 CURRENT_DIR = get_self_path()
@@ -100,34 +96,31 @@ class GPUManager:
         else:
             return GPUType.UNKNOWN
 
-    def set_gpu_env(self, selected_gpu, selected_index, manual_index=None):
+    def set_gpu_env(self, env, selected_gpu, selected_index, manual_index=None):
         gpu_type = self.get_gpu_type(selected_gpu)
         if manual_index == "":
             manual_index = None
         if gpu_type == GPUType.NVIDIA:
             if manual_index is not None:
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(manual_index)
+                env["CUDA_VISIBLE_DEVICES"] = str(manual_index)
                 logging.info(f"设置 CUDA_VISIBLE_DEVICES = {manual_index}")
             else:
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_index)
+                env["CUDA_VISIBLE_DEVICES"] = str(selected_index)
                 logging.info(f"设置 CUDA_VISIBLE_DEVICES = {selected_index}")
         elif gpu_type == GPUType.AMD:
             if manual_index is not None:
-                os.environ["HIP_VISIBLE_DEVICES"] = str(
-                    manual_index - len(self.nvidia_gpus)
-                )
+                env["HIP_VISIBLE_DEVICES"] = str(manual_index - len(self.nvidia_gpus))
                 logging.info(
                     f"设置 HIP_VISIBLE_DEVICES = {manual_index - len(self.nvidia_gpus)}"
                 )
             else:
-                os.environ["HIP_VISIBLE_DEVICES"] = str(
-                    selected_index - len(self.nvidia_gpus)
-                )
+                env["HIP_VISIBLE_DEVICES"] = str(selected_index - len(self.nvidia_gpus))
                 logging.info(
                     f"设置 HIP_VISIBLE_DEVICES = {selected_index - len(self.nvidia_gpus)}"
                 )
         else:
             logging.warning(f"未知的GPU类型: {selected_gpu}")
+        return env
 
 
 class LlamaCPPWorker(QObject):
@@ -176,79 +169,26 @@ class RunSection(QFrame):
         self.setObjectName(title.replace(" ", "-"))
         self.title = title
 
-    def _init_common_ui(self, layout):
-        # 跳过
-        pass
-
     def _create_gpu_selection_layout(self):
         layout = QHBoxLayout()
-        self.gpu_enabled_check = self._create_check_box("单GPU启动", True)
-        self.gpu_enabled_check.stateChanged.connect(self.toggle_gpu_selection)
         self.gpu_combo = ComboBox(self)
         self.manully_select_gpu_index = LineEdit(self)
         self.manully_select_gpu_index.setPlaceholderText("手动指定GPU索引")
         self.manully_select_gpu_index.setFixedWidth(140)
-        layout.addWidget(self.gpu_enabled_check)
-        layout.addWidget(self.manully_select_gpu_index)
         layout.addWidget(self.gpu_combo)
-        return layout
-
-    def _create_line_edit(self, placeholder, text):
-        line_edit = LineEdit(self)
-        line_edit.setPlaceholderText(placeholder)
-        line_edit.setText(text)
-        return line_edit
-
-    def _create_slider_spinbox_layout(
-        self,
-        label_text,
-        variable_name,
-        slider_value,
-        slider_min,
-        slider_max,
-        slider_step,
-    ):
-        layout = QVBoxLayout()
-        label = QLabel(label_text)
-        layout.addWidget(label)
-
-        h_layout = QHBoxLayout()
-        slider = Slider(Qt.Horizontal, self)
-        slider.setRange(slider_min, slider_max)
-        slider.setPageStep(slider_step)
-        slider.setValue(slider_value)
-
-        spinbox = SpinBox(self)
-        spinbox.setRange(slider_min, slider_max)
-        spinbox.setSingleStep(slider_step)
-        spinbox.setValue(slider_value)
-
-        slider.valueChanged.connect(spinbox.setValue)
-        spinbox.valueChanged.connect(slider.setValue)
-
-        h_layout.addWidget(slider)
-        h_layout.addWidget(spinbox)
-        layout.addLayout(h_layout)
-
-        setattr(self, f"{variable_name.replace(' ', '_')}", slider)
-        setattr(self, f"{variable_name.replace(' ', '_')}_spinbox", spinbox)
-
+        layout.addWidget(self.manully_select_gpu_index)
         return layout
 
     def _create_model_selection_layout(self):
         layout = QHBoxLayout()
         self.model_path = EditableComboBox(self)
         self.model_path.setPlaceholderText("请选择模型路径")
-        self.refresh_model_button = PushButton(FIF.SYNC, "刷新模型", self)
+        self.refresh_model_button = PushButton(FIF.SYNC, "刷新", self)
         self.refresh_model_button.clicked.connect(self.refresh_models)
+        self.refresh_model_button.setFixedWidth(140)
         layout.addWidget(self.model_path)
         layout.addWidget(self.refresh_model_button)
         return layout
-
-    def _create_check_box(self, text, checked):
-        check_box = CheckBox(text, self)
-        check_box.setChecked(checked)
-        return check_box
 
     def _create_editable_combo_box(self, items):
         combo_box = EditableComboBox(self)
@@ -310,5 +250,4 @@ class RunSection(QFrame):
         if not self.nvidia_gpus and not self.amd_gpus:
             logging.warning("未检测到NVIDIA或AMD GPU")
 
-    def toggle_gpu_selection(self):
-        self.gpu_combo.setEnabled(self.gpu_enabled_check.isChecked())
+        self.gpu_combo.addItems(["自动"])

@@ -16,6 +16,7 @@ from qfluentwidgets import (
 )
 
 from .common import CONFIG_FILE
+from .ui import *
 
 
 class SettingsSection(QFrame):
@@ -29,8 +30,10 @@ class SettingsSection(QFrame):
     def _init_ui(self):
         layout = QVBoxLayout()
 
-        self.llamacpp_path = self._create_line_edit(
-            "llama.cpp二进制文件所在的路径（可选），留空则为当前目录下的llama文件夹", ""
+        self.llamacpp_path = UiLineEdit(
+            self,
+            "llama.cpp二进制文件所在的路径（可选），留空则为当前目录下的llama文件夹",
+            "",
         )
         layout.addWidget(QLabel("llama.cpp 文件夹"))
         layout.addWidget(self.llamacpp_path)
@@ -44,6 +47,10 @@ class SettingsSection(QFrame):
 
         self.remember_window_state = CheckBox("记住窗口位置和大小", self)
         layout.addWidget(self.remember_window_state)
+
+        # 添加高级设置状态复选框
+        self.remember_advanced_state = CheckBox("记住高级设置状态", self)
+        layout.addWidget(self.remember_advanced_state)
 
         # 添加模型排序设置
         layout.addWidget(QLabel("模型列表排序方式:"))
@@ -59,13 +66,8 @@ class SettingsSection(QFrame):
         self.load_settings_button.clicked.connect(self.load_settings)
         layout.addWidget(self.load_settings_button)
 
-        self.setLayout(layout)
 
-    def _create_line_edit(self, placeholder, text):
-        line_edit = LineEdit(self)
-        line_edit.setPlaceholderText(placeholder)
-        line_edit.setText(text)
-        return line_edit
+        self.setLayout(layout)
 
     def save_settings(self):
         settings = {
@@ -73,6 +75,7 @@ class SettingsSection(QFrame):
             "model_search_paths": self.model_search_paths.toPlainText().split("\n"),
             "remember_window_state": self.remember_window_state.isChecked(),
             "model_sort_option": self.model_sort_combo.currentText(),
+            "remember_advanced_state": self.remember_advanced_state.isChecked(),
         }
         if not os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -104,4 +107,8 @@ class SettingsSection(QFrame):
         )
         self.model_sort_combo.setCurrentText(
             settings.get("model_sort_option", "修改时间")
+        )
+        # 新增：加载高级设置状态
+        self.remember_advanced_state.setChecked(
+            settings.get("remember_advanced_state", True)
         )

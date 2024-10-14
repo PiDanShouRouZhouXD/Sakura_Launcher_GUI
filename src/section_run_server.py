@@ -15,7 +15,8 @@ from qfluentwidgets import (
 )
 
 from .common import CURRENT_DIR, CONFIG_FILE, RunSection
-
+from .ui import *
+from .section_settings import SettingsSection  # 新增导入
 
 class RunServerSection(RunSection):
     def __init__(self, title, main_window, parent=None):
@@ -25,42 +26,90 @@ class RunServerSection(RunSection):
         self.refresh_models()
         self.refresh_gpus()
         self.load_selected_preset()
+        self.load_advanced_state()  # 新增：加载高级设置状态
 
     def _init_ui(self):
+        layout_advance = QVBoxLayout()
+        layout_advance.setContentsMargins(0, 0, 0, 0)  # 确保布局的边距也被移除
+        layout_advance.addWidget(UiHLine(self))
+        self._init_advance_options(layout_advance)
+        self._init_override_options(layout_advance)
+        self.menu_advance = QFrame()
+        self.menu_advance.setContentsMargins(0, 0, 0, 0)  # 移除内部边距
+        self.menu_advance.setLayout(layout_advance)
+        self.menu_advance.setVisible(False)
+
         layout = QVBoxLayout()
 
-        buttons_group = QGroupBox("")
         buttons_layout = QHBoxLayout()
+        buttons_layout.setAlignment(Qt.AlignRight)
 
-        self.save_preset_button = PushButton(FIF.SAVE, "保存预设", self)
-        self.save_preset_button.clicked.connect(self.save_preset)
-        self.save_preset_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.save_preset_button)
+        self.advance_button = PushButton(FIF.MORE, "高级设置", self)
+        self.advance_button.setFixedSize(110, 30)
+        self.advance_button.clicked.connect(self.toggle_advanced_settings)
+        buttons_layout.addWidget(self.advance_button)
 
-        self.load_preset_button = PushButton(FIF.SYNC, "刷新预设", self)
-        self.load_preset_button.clicked.connect(self.load_presets)
-        self.load_preset_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.load_preset_button)
+        self.benchmark_button = PushButton(FIF.UNIT, "性能测试", self)
+        self.benchmark_button.setFixedSize(110, 30)
+        buttons_layout.addWidget(self.benchmark_button)
+
+        # 新增运行并共享按钮
+        self.run_and_share_button = PushButton(FIF.IOT, "运行并共享", self)
+        self.run_and_share_button.setFixedSize(140, 30)
+        buttons_layout.addWidget(self.run_and_share_button)
 
         self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
         self.run_button.setFixedSize(110, 30)
         buttons_layout.addWidget(self.run_button)
 
-        buttons_layout.setAlignment(Qt.AlignRight)
+
+
+        buttons_group = QGroupBox("")
         buttons_group.setStyleSheet(
             """ QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}"""
         )
-
         buttons_group.setLayout(buttons_layout)
         layout.addWidget(buttons_group)
 
-        layout.addWidget(QLabel("模型选择"))
-        layout.addLayout(self._create_model_selection_layout())
-        layout.addWidget(QLabel("配置预设选择"))
+        layout.addLayout(UiRow("模型", self._create_model_selection_layout()))
+        layout.addLayout(UiRow("显卡", self._create_gpu_selection_layout()))
+
+        layout.addLayout(UiRow("上下文长度 -c", self._create_context_length_layout()))
+        layout.addLayout(
+            UiRow("工作线程数量 -np", UiSlider(self, "n_parallel", 1, 1, 32, 1, spinbox_fixed_width=140))
+        )
+
+        self.context_per_thread_label = QLabel(self)
+        layout.addWidget(self.context_per_thread_label)
+        layout.insertStretch(-1)
+
+        layout.addWidget(self.menu_advance)
+        self.setLayout(layout)
+
+        self.context_length_input.valueChanged.connect(self.update_slider_from_input)
+        self.context_length.valueChanged.connect(self.update_context_per_thread)
+        self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
+
+        self.update_context_per_thread()
+
+    def _create_preset_options(self):
+        preset_layout = QHBoxLayout()
+
         self.config_preset_combo = EditableComboBox(self)
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
-        layout.addWidget(self.config_preset_combo)
+        preset_layout.addWidget(self.config_preset_combo)
 
+        self.save_preset_button = PushButton(FIF.SAVE, "保存", self)
+        self.save_preset_button.clicked.connect(self.save_preset)
+        preset_layout.addWidget(self.save_preset_button)
+
+        self.load_preset_button = PushButton(FIF.SYNC, "刷新", self)
+        self.load_preset_button.clicked.connect(self.load_presets)
+        preset_layout.addWidget(self.load_preset_button)
+
+        return preset_layout
+
+    def _create_ip_port_log_option(self):
         ip_port_log_layout = QHBoxLayout()
 
         ip_layout = QVBoxLayout()
@@ -69,7 +118,7 @@ class RunServerSection(RunSection):
         ip_layout.addWidget(self.host_input)
 
         host_layout = QVBoxLayout()
-        self.port_input = self._create_line_edit("", "8080")
+        self.port_input = UiLineEdit(self, "", "8080")
         host_layout.addWidget(QLabel("端口 --port"))
         host_layout.addWidget(self.port_input)
 
@@ -84,44 +133,42 @@ class RunServerSection(RunSection):
         ip_port_log_layout.addLayout(host_layout)
         ip_port_log_layout.addLayout(log_layout)
 
-        layout.addLayout(ip_port_log_layout)
+        return ip_port_log_layout
 
+    def _create_benchmark_layout(self):
+        layout = QHBoxLayout()
+        self.npp_input = UiLineEdit(self, "Prompt数量", "768")
+        self.ntg_input = UiLineEdit(self, "生成文本数量", "384")
+        self.npl_input = UiLineEdit(self, "并行Prompt数量", "1,2,4,8,16")
+        layout.addLayout(UiCol("Prompt数量 -npp", self.npp_input))
+        layout.addLayout(UiCol("生成文本数量 -ntg", self.ntg_input))
+        layout.addLayout(UiCol("并行Prompt数量 -npl", self.npl_input))
+        return layout
+
+    def _init_advance_options(self, layout):
+        layout_extra_options = QHBoxLayout()
+        layout_extra_options.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
+        
+        self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
+        layout_extra_options.addWidget(self.flash_attention_check)
+        layout_extra_options.addStretch(1)
+        
+        self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
+        layout_extra_options.addWidget(self.no_mmap_check)
+        
+        layout.addLayout(layout_extra_options)
+
+        layout.addLayout(UiRow("配置预设选择", self._create_preset_options()))
         layout.addLayout(
-            self._create_slider_spinbox_layout(
-                "GPU层数 -ngl", "gpu_layers", 200, 0, 200, 1
-            )
+            UiRow("GPU层数 -ngl", UiSlider(self, "gpu_layers", 200, 0, 200, 1))
         )
+        layout.addLayout(self._create_ip_port_log_option())
 
-        layout.addWidget(QLabel("上下文长度 -c"))
-        layout.addLayout(self._create_context_length_layout())
+        layout.addLayout(self._create_benchmark_layout())
 
-        layout.addLayout(
-            self._create_slider_spinbox_layout(
-                "并行工作线程数 -np", "n_parallel", 1, 1, 32, 1
-            )
-        )
-
-        self.context_per_thread_label = QLabel(self)
-        layout.addWidget(self.context_per_thread_label)
-
-        self.flash_attention_check = self._create_check_box(
-            "启用 Flash Attention -fa", True
-        )
-        layout.addWidget(self.flash_attention_check)
-
-        self.no_mmap_check = self._create_check_box("启用 --no-mmap", True)
-        layout.addWidget(self.no_mmap_check)
-
-        self.is_sharing = self._create_check_box("启动后自动开启共享", False)
-        layout.addWidget(self.is_sharing)
-
-        layout.addLayout(self._create_gpu_selection_layout())
-
+    def _init_override_options(self, layout):
         # 新增llamacpp覆盖选项
-        self.llamacpp_override = self._create_line_edit(
-            "覆盖默认llamacpp路径（可选）", ""
-        )
-        layout.addWidget(QLabel("覆盖默认llamacpp路径"))
+        self.llamacpp_override = UiLineEdit(self, "覆盖默认llamacpp路径（可选）", "")
         layout.addWidget(self.llamacpp_override)
 
         self.custom_command_append = TextEdit(self)
@@ -134,14 +181,6 @@ class RunServerSection(RunSection):
         self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
         layout.addWidget(self.custom_command)
 
-        self.setLayout(layout)
-
-        self.context_length_input.valueChanged.connect(self.update_slider_from_input)
-        self.context_length.valueChanged.connect(self.update_context_per_thread)
-        self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
-
-        self.update_context_per_thread()
-
     def _create_context_length_layout(self):
         layout = QHBoxLayout()
         self.context_length = Slider(Qt.Horizontal, self)
@@ -153,6 +192,7 @@ class RunServerSection(RunSection):
         self.context_length_input.setRange(256, 131072)
         self.context_length_input.setSingleStep(256)
         self.context_length_input.setValue(2048)
+        self.context_length_input.setFixedWidth(140)
 
         layout.addWidget(self.context_length)
         layout.addWidget(self.context_length_input)
@@ -195,7 +235,7 @@ class RunServerSection(RunSection):
         n_parallel = self.n_parallel_spinbox.value()
         context_per_thread = total_context // n_parallel
         self.context_per_thread_label.setText(
-            f"每个线程的context数量: {context_per_thread}"
+            f"每个工作线程的上下文大小: {context_per_thread}"
         )
 
     def save_preset(self):
@@ -224,7 +264,6 @@ class RunServerSection(RunSection):
                 "gpu_layers": self.gpu_layers_spinbox.value(),
                 "flash_attention": self.flash_attention_check.isChecked(),
                 "no_mmap": self.no_mmap_check.isChecked(),
-                "gpu_enabled": self.gpu_enabled_check.isChecked(),
                 "gpu": self.gpu_combo.currentText(),
                 "model_path": self.model_path.currentText(),
                 "context_length": self.context_length_input.value(),
@@ -233,8 +272,10 @@ class RunServerSection(RunSection):
                 "port": self.port_input.text(),
                 "log_format": self.log_format_combo.currentText(),
                 "gpu_index": self.manully_select_gpu_index.text(),
+                "npp": self.npp_input.text(),
+                "ntg": self.ntg_input.text(),
+                "npl": self.npl_input.text(),
                 "llamacpp_override": self.llamacpp_override.text(),
-                "is_sharing": self.is_sharing.isChecked(),
             },
         }
 
@@ -290,12 +331,13 @@ class RunServerSection(RunSection):
                     self.flash_attention_check.setChecked(
                         config.get("flash_attention", True)
                     )
+                    self.npp_input.setText(config.get("npp", "768"))
+                    self.ntg_input.setText(config.get("ntg", "384"))
+                    self.npl_input.setText(config.get("npl", "1,2,4,8,16"))
                     self.no_mmap_check.setChecked(config.get("no_mmap", True))
-                    self.gpu_enabled_check.setChecked(config.get("gpu_enabled", True))
                     self.gpu_combo.setCurrentText(config.get("gpu", ""))
                     self.manully_select_gpu_index.setText(config.get("gpu_index", ""))
                     self.llamacpp_override.setText(config.get("llamacpp_override", ""))
-                    self.is_sharing.setChecked(config.get("is_sharing", False))
                     self.update_context_per_thread()
                     break
 
@@ -308,3 +350,22 @@ class RunServerSection(RunSection):
                 except json.JSONDecodeError:
                     return {}
         return {}
+
+    # 修改方法
+    def toggle_advanced_settings(self):
+        new_state = not self.menu_advance.isVisible()
+        self.menu_advance.setVisible(new_state)
+
+    # 新增方法
+    def get_advanced_state(self):
+        return self.menu_advance.isVisible()
+
+    def load_advanced_state(self):
+        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
+        try:
+            with open(config_file_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if config.get("remember_advanced_state", False) and self.main_window.settings_section.remember_advanced_state.isChecked():
+                self.menu_advance.setVisible(config.get("advanced_state", False))
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass

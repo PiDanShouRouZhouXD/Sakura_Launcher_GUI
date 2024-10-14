@@ -1,3 +1,4 @@
+import re
 import os
 import requests
 import zipfile
@@ -222,9 +223,8 @@ class DownloadSection(QFrame):
         if latest_cuda:
             row = table.rowCount()
             table.insertRow(row)
-            table.setItem(
-                row, 0, self.create_table_label(f"最新CUDA版本 ({latest_cuda['name']})")
-            )
+            version = re.findall(r'b\d+', latest_cuda["name"])[0]
+            table.setItem(row, 0, self.create_table_label(f"{version}-CUDA最新"))
             table.setItem(row, 1, self.create_table_label("Nvidia独显"))
             download_fn = lambda url=latest_cuda["url"], name=latest_cuda[
                 "name"

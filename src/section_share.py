@@ -20,7 +20,7 @@ from qfluentwidgets import (
     FluentIcon as FIF,
 )
 
-from .common import CLOUDFLARED, CONFIG_FILE, RunSection, get_resource_path
+from .common import CLOUDFLARED, CONFIG_FILE, get_resource_path
 from .ui import *
 
 
@@ -126,9 +126,13 @@ class CFShareWorker(QThread):
             self.cloudflared_process = None
 
 
-class CFShareSection(RunSection):
+class CFShareSection(QFrame):
     def __init__(self, title, main_window, parent=None):
-        super().__init__(title, main_window, parent)
+        super().__init__(parent)
+        self.main_window = main_window
+        self.setObjectName(title.replace(" ", "-"))
+        self.title = title
+
         self._init_ui()
         self.load_settings()
         self.worker = None

@@ -437,18 +437,25 @@ class RunServerSection(QFrame):
         with open(config_file_path, "w", encoding="utf-8") as f:
             json.dump(current_settings, f, ensure_ascii=False, indent=4)
 
-        self.load_presets()
+        self.load_presets(preset_name)  # 传入当前预设名称
         self.main_window.createSuccessInfoBar("成功", "预设已保存")
 
-    def load_presets(self):
+    def load_presets(self, current_preset=None):
+        self.config_preset_combo.blockSignals(True)  # 阻止信号触发
         self.config_preset_combo.clear()
         presets = self.load_presets_from_file()
         if not presets or presets == {}:
+            self.config_preset_combo.blockSignals(False)
             return
         if self.title in presets:
-            self.config_preset_combo.addItems(
-                [preset["name"] for preset in presets[self.title]]
-            )
+            preset_names = [preset["name"] for preset in presets[self.title]]
+            self.config_preset_combo.addItems(preset_names)
+            if current_preset and current_preset in preset_names:
+                self.config_preset_combo.setCurrentText(current_preset)
+            elif preset_names:
+                self.config_preset_combo.setCurrentText(preset_names[0])
+        self.config_preset_combo.blockSignals(False)  # 恢复信号
+        self.load_selected_preset()  # 加载选中的预设
 
     def load_selected_preset(self):
         preset_name = self.config_preset_combo.currentText()

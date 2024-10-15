@@ -4,7 +4,7 @@ import subprocess
 import requests
 import re
 import time
-from PySide6.QtCore import Qt, Signal, Slot, QThread
+from PySide6.QtCore import Qt, Signal, Slot, QThread, QThreadPool, QRunnable
 from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
@@ -23,6 +23,26 @@ from qfluentwidgets import (
 from .common import CLOUDFLARED, CONFIG_FILE, get_resource_path
 from .ui import *
 
+
+class SlotsRefreshWorker(QRunnable):
+    def __init__(self, worker_url, callback):
+        super().__init__()
+        self.worker_url = worker_url
+        self.callback = callback
+
+    def run(self):
+        try:
+            response = requests.get(f"{self.worker_url}/health")
+            data = response.json()
+            if data["status"] == "ok":
+                slots_idle = data.get("slots_idle", "未知")
+                slots_processing = data.get("slots_processing", "未知")
+                status = f"在线slot数量: 空闲 {slots_idle}, 处理中 {slots_processing}"
+            else:
+                status = "在线slot数量: 获取失败"
+        except Exception as e:
+            status = f"在线slot数量: 获取失败 - {str(e)}"
+        self.callback(status)
 
 class CFShareWorker(QThread):
     tunnel_url_found = Signal(str)
@@ -383,25 +403,24 @@ class CFShareSection(QFrame):
             settings.get("worker_url", "https://sakura-share.one")
         )
 
+
+    @Slot()
     def refresh_slots(self):
         worker_url = self.worker_url_input.text().strip()
         if not worker_url:
             self.slots_status_label.setText("在线slot数量: 获取失败 - WORKER_URL为空")
             return
+        
+        self.refresh_slots_button.setEnabled(False)
+        self.slots_status_label.setText("在线slot数量: 正在获取...")
+        
+        worker = SlotsRefreshWorker(worker_url, self.update_slots_status)
+        QThreadPool.globalInstance().start(worker)
 
-        try:
-            response = requests.get(f"{worker_url}/health")
-            data = response.json()
-            if data["status"] == "ok":
-                slots_idle = data.get("slots_idle", "未知")
-                slots_processing = data.get("slots_processing", "未知")
-                self.slots_status_label.setText(
-                    f"在线slot数量: 空闲 {slots_idle}, 处理中 {slots_processing}"
-                )
-            else:
-                self.slots_status_label.setText("在线slot数量: 获取失败")
-        except Exception as e:
-            self.slots_status_label.setText(f"在线slot数量: 获取失败 - {str(e)}")
+    @Slot(str)
+    def update_slots_status(self, status):
+        self.slots_status_label.setText(status)
+        self.refresh_slots_button.setEnabled(True)
 
     def check_local_health_status(self):
         port = self.main_window.run_server_section.port_input.text().strip()

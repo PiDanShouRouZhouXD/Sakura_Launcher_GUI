@@ -1,8 +1,5 @@
-import re
 import os
 import requests
-import zipfile
-import py7zr
 from hashlib import sha256
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import (
@@ -14,8 +11,10 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QWidget,
     QStackedWidget,
+    QHBoxLayout,
 )
 from qfluentwidgets import (
+    ComboBox,
     MessageBox,
     FluentIcon as FIF,
     TableWidget,
@@ -25,6 +24,38 @@ from qfluentwidgets import (
 )
 
 from .common import CURRENT_DIR, get_self_path
+from .llamacpp import (
+    LLAMACPP_CUDART_DOWNLOAD_LINK,
+    LLAMACPP_CUDART_FILENAME,
+    LLAMACPP_LIST,
+    Llamacpp,
+    get_latest_cuda_release,
+    unzip_llamacpp,
+)
+from .ui import UiHLine
+
+
+def UiDownloadSrcSelect(items, on_change):
+    comboBox = ComboBox()
+    comboBox.addItems(items)
+    comboBox.currentTextChanged.connect(on_change)
+
+    layout = QHBoxLayout()
+    layout.addWidget(QLabel("下载源"))
+    layout.addWidget(comboBox)
+    return layout
+
+
+def UiTableLabel(text):
+    item = QTableWidgetItem(text)
+    item.setFlags(Qt.ItemIsEnabled)
+    return item
+
+
+def UiDownloadButton(on_click):
+    download_button = TransparentPushButton(FIF.DOWNLOAD, "下载")
+    download_button.clicked.connect(on_click)
+    return download_button
 
 
 class DownloadThread(QThread):
@@ -104,6 +135,7 @@ class DownloadThread(QThread):
 
 
 class DownloadSection(QFrame):
+    llamacpp_download_src = "GHProxy"
     model_links = [
         (
             "GalTransl-7B-v2-IQ4_XS.gguf",
@@ -116,28 +148,6 @@ class DownloadSection(QFrame):
         (
             "sakura-14b-qwen2beta-v0.9.2-q4km.gguf",
             "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-q4km.gguf",
-        ),
-    ]
-    llamacpp_links = [
-        (
-            "b3855-CUDA",
-            "Nvidia独显",
-            "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3855-bin-win-cuda-cu12.2.0-x64.7z",
-        ),
-        (
-            "b3384-ROCm",
-            "部分AMD独显",
-            "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3384-bin-win-rocm-avx2-x64.zip",
-        ),
-        (
-            "b3534-ROCm-780m",
-            "部分AMD核显",
-            "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3534-bin-win-rocm-avx512-x64.zip",
-        ),
-        (
-            "b3855-Vulkan",
-            "通用，不推荐",
-            "https://mirror.ghproxy.com/https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha/llama-b3855-bin-win-vulkan-x64.zip",
         ),
     ]
 
@@ -216,58 +226,77 @@ class DownloadSection(QFrame):
         layout.addWidget(table)
         self.model_download_section.setLayout(layout)
 
-    def init_llamacpp_download_section(self):
-        table = self.create_download_table(["版本", "适合显卡", "下载"])
-        # 添加GitHub最新CUDA版本选项
-        latest_cuda = self.get_latest_cuda_release()
-        if latest_cuda:
-            row = table.rowCount()
-            table.insertRow(row)
-            version = re.findall(r'b\d+', latest_cuda["name"])[0]
-            table.setItem(row, 0, self.create_table_label(f"{version}-CUDA最新"))
-            table.setItem(row, 1, self.create_table_label("Nvidia独显"))
-            download_fn = lambda url=latest_cuda["url"], name=latest_cuda[
-                "name"
-            ]: self.start_download(url, name)
-            table.setCellWidget(row, 2, self.create_table_button(download_fn))
+    def refresh_llamacpp_table(self):
+        table = self.llamacpp_table
 
-        # 添加现有的下载选项
-        for version, gpu, url in self.llamacpp_links:
-            row = table.rowCount()
-            table.insertRow(row)
-            table.setItem(row, 0, self.create_table_label(version))
-            table.setItem(row, 1, self.create_table_label(gpu))
-            # 从 URL 中提取文件名
-            filename = url.split("/")[-1]
-            download_fn = lambda url=url, filename=filename: self.start_download(
-                url, filename
-            )
-            table.setCellWidget(row, 2, self.create_table_button(download_fn))
+        def create_button(llamacpp: Llamacpp):
+            download_fn = lambda: self.start_download_llamacpp(llamacpp)
+            button = UiDownloadButton(download_fn)
+            button.setEnabled(self.llamacpp_download_src in llamacpp.download_links)
+            return button
+
+        table.clearContents()
+        for row, llamacpp in enumerate(LLAMACPP_LIST):
+            if table.rowCount() <= row:
+                table.insertRow(row)
+            table.setItem(row, 0, UiTableLabel(llamacpp.version))
+            table.setItem(row, 1, UiTableLabel(llamacpp.gpu))
+            table.setCellWidget(row, 2, create_button(llamacpp=llamacpp))
+
+    def init_llamacpp_download_section(self):
+        try:
+            get_latest_cuda_release()
+        except Exception as e:
+            self.main_window.log_info(f"获取最新CUDA版本时出错: {str(e)}")
+
+        self.llamacpp_table = self.create_download_table(["版本", "适合显卡", "下载"])
+        self.refresh_llamacpp_table()
+
+        def on_src_change(text):
+            self.llamacpp_download_src = text
+
+        comboBox = UiDownloadSrcSelect(["GHProxy", "GitHub"], on_src_change)
+        on_src_change("GHProxy")
+
+        def create_cudart_button():
+            download_fn = lambda: self.start_download_cudart()
+            button = UiDownloadButton(download_fn)
+            layout = QHBoxLayout()
+            layout.addWidget(QLabel("下载CUDA"))
+            layout.addWidget(button)
+            return layout
+
+        cudart_button = create_cudart_button()
 
         description = self.create_description_label(
             """
-        <p>您可以在这里下载不同版本的llama.cpp，文件会保存到启动器所在的目录。您也可以手动从<a href="https://github.com/ggerganov/llama.cpp/releases">GitHub发布页面</a>下载发行版。</p>
-        <p><b>ROCm支持的独显型号(感谢Sora维护)</b>
-            <ul>
-                <li>RX 7900 / 7800 / 7700系列显卡</li>
-                <li>RX 6900 / 6800 / 6700系列显卡</li>
-            </ul>
+        <p>下载的llama.cpp会解压到启动器所在的目录，如果存在旧版本，会自动覆盖。你也可以手动从<a href="https://github.com/ggerganov/llama.cpp/releases">GitHub发布页面</a>下载发行版。</p>
+        <p><b>ROCm支持的AMD独显型号(感谢Sora维护)</b>
+        <ul>
+            <li>RX 7900 / 7800 / 7700系列显卡</li>
+            <li>RX 6900 / 6800 / 6700系列显卡</li>
+        </ul>
         </p>
-        <p><b>ROCm-780m支持的核显型号</b>
-            <ul>
-                <li>7840hs/7940hs/8840hs/8845hs </li>
-                <li>理论上支持任何2022年后的AMD GPU，但要求CPU支持AVX512，且不对任何非780m显卡的可用性负责</li>
-            </ul>
+        <p><b>ROCm-780m支持的AMD核显型号</b>
+        <ul>
+            <li>7840hs / 7940hs / 8840hs / 8845hs </li>
+            <li>理论上支持任何2022年后的AMD GPU，但要求CPU支持AVX512，且不对任何非780m显卡的可用性负责</li>
+        </ul>
         </p>
         <p><b>注意：</b></p>
-        <p>最新CUDA版本不包含cudart，如果你不知道这是什么，请不要下载最新CUDA版本</p>
-        <p>Vulkan版本现在还不支持IQ系列的量化。</p>
+        <ul>
+            <li>Vulkan版本现在还不支持IQ系列的量化。</li>
+            <li>intel ARC用户可以参考<a href="https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md">这篇文档</a>来手动安装llamacpp，在启动器指定软链接路径<b>可能</b>可以正常使用。
+        </ur>
         """
         )
 
         layout = QVBoxLayout(self.llamacpp_download_section)
         layout.addWidget(description)
-        layout.addWidget(table)
+        layout.addWidget(UiHLine(self))
+        layout.addLayout(comboBox)
+        layout.addLayout(cudart_button)
+        layout.addWidget(self.llamacpp_table)
         self.llamacpp_download_section.setLayout(layout)
 
     def create_description_label(self, content):
@@ -287,6 +316,7 @@ class DownloadSection(QFrame):
         table.setColumnCount(len(columns))
         table.setHorizontalHeaderLabels(columns)
         table.verticalHeader().hide()
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         table.horizontalHeader().setStretchLastSection(True)
         return table
@@ -301,26 +331,18 @@ class DownloadSection(QFrame):
         download_button.clicked.connect(download_function)
         return download_button
 
-    def unzip_llamacpp(self, filename):
-        llama_folder = os.path.join(CURRENT_DIR, "llama")
-        file_path = os.path.join(CURRENT_DIR, filename)
-        print(f"解压 {filename} 到 {llama_folder}")
+    def start_download_cudart(self):
+        src = self.llamacpp_download_src
+        url = LLAMACPP_CUDART_DOWNLOAD_LINK[src]
+        self.start_download(url, LLAMACPP_CUDART_FILENAME)
 
-        if not os.path.exists(llama_folder):
-            os.mkdir(llama_folder)
-
-        # 解压，如果文件已存在则覆盖
-        if filename.endswith(".zip"):
-            with zipfile.ZipFile(file_path, "r") as zip_ref:
-                zip_ref.extractall(llama_folder)
-        elif filename.endswith(".7z"):
-            with py7zr.SevenZipFile(file_path, mode="r") as z:
-                z.extractall(llama_folder)
+    def start_download_llamacpp(self, llamacpp: Llamacpp):
+        src = self.llamacpp_download_src
+        url = llamacpp.download_links[src]
+        if url:
+            self.start_download(url, llamacpp.filename)
         else:
-            print(f"不支持的文件格式: {filename}")
-            return
-
-        print(f"{filename} 已成功解压到 {llama_folder}")
+            self.main_window.log_info(f"当前下载源不支持该llamacpp版本，请换其他源")
 
     # 直接使用requests下载
     def start_download(self, url, filename):
@@ -371,7 +393,7 @@ class DownloadSection(QFrame):
         # 检查是否为llama.cpp文件
         if downloaded_file.startswith("llama"):
             try:
-                self.unzip_llamacpp(downloaded_file)
+                unzip_llamacpp(CURRENT_DIR, downloaded_file)
                 self.main_window.createSuccessInfoBar(
                     "解压完成", "已经将llama.cpp解压到程序所在目录的llama文件夹内。"
                 )
@@ -426,30 +448,3 @@ class DownloadSection(QFrame):
         self.main_window.log_info(f"Download error: {error_message}")
         QApplication.processEvents()  # 确保UI更新
         MessageBox("错误", f"下载失败: {error_message}", self).exec()
-
-    def get_latest_cuda_release(self):
-        try:
-            # 发送请求到最新release页面
-            response = requests.get(
-                "https://github.com/ggerganov/llama.cpp/releases/latest",
-                allow_redirects=False,
-            )
-
-            # 从重定向URL中提取版本号
-            if response.status_code == 302:
-                redirect_url = response.headers.get("Location")
-                version = redirect_url.split("/")[-1]
-
-                # 构造下载URL
-                download_url = f"https://github.com/ggerganov/llama.cpp/releases/download/{version}/llama-{version}-bin-win-cuda-cu12.2.0-x64.zip"
-
-                return {
-                    "name": f"llama-{version}-bin-win-cuda-cu12.2.0-x64.zip",
-                    "url": download_url,
-                }
-            else:
-                self.main_window.log_info("无法获取最新版本信息")
-                return None
-        except Exception as e:
-            self.main_window.log_info(f"获取最新CUDA版本时出错: {str(e)}")
-            return None

@@ -195,3 +195,4 @@ def UiCol3(c1, c2, c3=None):
     else:
         layout.addStretch(1.0)
     return layout
+

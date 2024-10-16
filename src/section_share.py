@@ -4,7 +4,7 @@ import subprocess
 import requests
 import re
 import time
-from PySide6.QtCore import Qt, Signal, Slot, QThread, QThreadPool, QRunnable
+from PySide6.QtCore import Qt, Signal, Slot, QThread, QThreadPool, QRunnable, QTimer, QMetaObject, QObject
 from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
@@ -12,12 +12,19 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QSpacerItem,
     QSizePolicy,
+    QTableWidgetItem,
+    QHeaderView,
+    QFrame,
+    QStackedWidget,
+    QWidget,
 )
 from qfluentwidgets import (
     PushButton,
     PrimaryPushButton,
     MessageBox,
+    SegmentedWidget,
     FluentIcon as FIF,
+    TableWidget,
 )
 
 from .common import CLOUDFLARED, CONFIG_FILE, get_resource_path
@@ -44,6 +51,26 @@ class SlotsRefreshWorker(QRunnable):
             status = f"在线slot数量: 获取失败 - {str(e)}"
         self.callback(status)
 
+class RankingRefreshWorker(QRunnable):
+    class Signals(QObject):
+        result = Signal(object)
+
+    def __init__(self, worker_url):
+        super().__init__()
+        self.worker_url = worker_url
+        self.signals = self.Signals()
+
+    def run(self):
+        try:
+            response = requests.get(f"{self.worker_url}/ranking")
+            data = response.json()
+            if isinstance(data, dict):
+                self.signals.result.emit(data)
+            else:
+                self.signals.result.emit({"error": "数据格式错误"})
+        except Exception as e:
+            self.signals.result.emit({"error": f"获取失败 - {str(e)}"})
+
 class CFShareWorker(QThread):
     tunnel_url_found = Signal(str)
     error_occurred = Signal(str)
@@ -57,6 +84,8 @@ class CFShareWorker(QThread):
         self.cloudflared_process = None
         self.tunnel_url = None
         self.is_running = False
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.check_and_update)
 
     def run(self):
         self.is_running = True
@@ -73,16 +102,17 @@ class CFShareWorker(QThread):
         )
 
         # Wait for tunnel URL
-        time.sleep(10)
-        self.check_tunnel_url()
+        QTimer.singleShot(10000, self.check_tunnel_url)
 
         # Start health check and metrics update
-        while self.is_running:
-            if not self.check_local_health_status():
-                self.health_check_failed.emit()
-                break
+        self.timer.start(5000)  # 每5秒检查一次
+
+    def check_and_update(self):
+        if not self.check_local_health_status():
+            self.health_check_failed.emit()
+            self.stop()
+        else:
             self.update_metrics()
-            time.sleep(5)
 
     def check_tunnel_url(self):
         try:
@@ -137,6 +167,7 @@ class CFShareWorker(QThread):
 
     def stop(self):
         self.is_running = False
+        self.timer.stop()
         if self.cloudflared_process:
             self.cloudflared_process.terminate()
             try:
@@ -158,7 +189,41 @@ class CFShareSection(QFrame):
         self.worker = None
 
     def _init_ui(self):
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(self)
+
+        # 创建标签页切换控件
+        self.pivot = SegmentedWidget(self)
+        self.stacked_widget = QStackedWidget(self)
+        
+        # 创建不同的页面
+        self.share_page = QWidget(self)
+        self.metrics_page = QWidget(self)
+        self.ranking_page = QWidget(self)
+        
+        self.init_share_page()
+        self.init_metrics_page()
+        self.init_ranking_page()
+        
+        self.add_sub_interface(self.share_page, "share_page", "共享设置")
+        self.add_sub_interface(self.metrics_page, "metrics_page", "本地数据统计")
+        self.add_sub_interface(self.ranking_page, "ranking_page", "在线排名")
+        
+        layout.addWidget(self.pivot)
+        layout.addWidget(self.stacked_widget)
+
+        self.setLayout(layout)
+
+    def add_sub_interface(self, widget: QWidget, object_name, text):
+        widget.setObjectName(object_name)
+        self.stacked_widget.addWidget(widget)
+        self.pivot.addItem(
+            routeKey=object_name,
+            text=text,
+            onClick=lambda: self.stacked_widget.setCurrentWidget(widget),
+        )
+
+    def init_share_page(self):
+        layout = QVBoxLayout(self.share_page)
 
         buttons_group = QGroupBox("")
         buttons_layout = QHBoxLayout()
@@ -197,76 +262,48 @@ class CFShareSection(QFrame):
         )
         layout.addWidget(self.worker_url_input)
 
+        layout.addWidget(QLabel("Token:"))
+        self.tg_token_input = UiLineEdit(
+            self, "输入从@SakuraShareBot获取的token，用于统计贡献(可选)", ""
+        )
+        layout.addWidget(self.tg_token_input)
+
         self.status_label = QLabel("状态: 未运行")
         layout.addWidget(self.status_label)
 
         self.slots_status_label = QLabel("在线slot数量: 未知")
         layout.addWidget(self.slots_status_label)
 
-        # 更新指标
-        self.metrics_labels = {
-            "prompt_tokens_total": QLabel("提示词 tokens 总数: 暂无数据"),
-            "prompt_seconds_total": QLabel("提示词处理总时间: 暂无数据"),
-            "tokens_predicted_total": QLabel("生成的 tokens 总数: 暂无数据"),
-            "tokens_predicted_seconds_total": QLabel("生成处理总时间: 暂无数据"),
-            "n_decode_total": QLabel("llama_decode() 调用总次数: 暂无数据"),
-            "n_busy_slots_per_decode": QLabel(
-                "每次 llama_decode() 调用的平均忙碌槽位数: 暂无数据"
-            ),
-            "prompt_tokens_seconds": QLabel("提示词平均吞吐量: 暂无数据"),
-            "predicted_tokens_seconds": QLabel("生成平均吞吐量: 暂无数据"),
-            "kv_cache_usage_ratio": QLabel("KV-cache 使用率: 暂无数据"),
-            "kv_cache_tokens": QLabel("KV-cache tokens: 暂无数据"),
-            "requests_processing": QLabel("正在处理的请求数: 暂无数据"),
-            "requests_deferred": QLabel("延迟的请求数: 暂无数据"),
-        }
-
-        tooltips = {
-            "prompt_tokens_total": "已处理的提示词 tokens 总数",
-            "prompt_seconds_total": "提示词处理的总时间",
-            "tokens_predicted_total": "已生成的 tokens 总数",
-            "tokens_predicted_seconds_total": "生成处理的总时间",
-            "n_decode_total": "llama_decode() 函数的总调用次数",
-            "n_busy_slots_per_decode": "每次 llama_decode() 调用时的平均忙碌槽位数",
-            "prompt_tokens_seconds": "提示词的平均处理速度",
-            "predicted_tokens_seconds": "生成的平均速度",
-            "kv_cache_usage_ratio": "KV-cache 的使用率（1 表示 100% 使用）",
-            "kv_cache_tokens": "KV-cache 中的 token 数量",
-            "requests_processing": "当前正在处理的请求数",
-            "requests_deferred": "被延迟的请求数",
-        }
-
-        metrics_title = QLabel("\n数据统计")
-        metrics_title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        layout.addWidget(metrics_title)
-
-        for key, label in self.metrics_labels.items():
-            label.setToolTip(tooltips[key])
-            layout.addWidget(label)
-
+        # 添加说明文本
         description = QLabel()
         description.setText(
             """
-        <html>
-        <body>
-        <h3>说明</h3>
-        <p>这是一个一键分享你本地部署的Sakura模型给其他用户（成为帕鲁）的工具，服务端部署请按照下面的仓库的文档进行。</p>
-        <ol>
-            <li>请确保本地服务已启动。</li>
-            <li>请确保WORKER_URL正确。<br>
-            <span>如无特殊需求，请使用默认的WORKER_URL，此链接是由共享脚本开发者本人维护的。</span></li>
-            <li>目前仅支持Windows系统，其他系统请自行更改脚本。</li>
-            <li>目前仅支持以下两种模型（服务端有模型指纹检查）：
-                <ul>
-                    <li>sakura-14b-qwen2beta-v0.9.2-iq4xs</li>
-                    <li>sakura-14b-qwen2beta-v0.9.2-q4km</li>
-                </ul>
-            </li>
-            <li>当你不想成为帕鲁的时候，也可以通过这个链接来访问其他帕鲁的模型，但不保证服务的可用性与稳定性。</li>
-        </ol>
-        </body>
-        </html>
-        """
+            <html>
+            <body>
+            <h3>说明</h3>
+            <p>这是一个一键分享你本地部署的Sakura模型给其他用户（成为帕鲁）的工具，服务端部署请按照下面的仓库的文档进行。</p>
+            <p>注意：</p>
+            <ol>
+                <li>请确保本地服务已启动。</li>
+                <li>请确保WORKER_URL正确。<br>
+                <span>如无特殊需求，请使用默认的WORKER_URL，此链接是由共享脚本开发者本人维护的。</span></li>
+                <li>目前仅支持Windows系统，其他系统请自行更改脚本。</li>
+                <li>目前仅支持一种模型：
+                    <ul>
+                        <li>sakura-14b-qwen2.5-v1.0-iq4xs.gguf</li>
+                    </ul>
+                </li>
+                <li>当你不想成为帕鲁的时候，也可以通过这个链接来访问其他帕鲁的模型，但不保证服务的可用性与稳定性。</li>
+            </ol>
+            <p>关于贡献统计：</p>
+            <ol>
+                <li>贡献统计是可选的，如果你不希望参与贡献统计，可以不填写Token。</li>
+                <li>贡献统计需要你从TG@SakuraShareBot获取Token，并在此处填写。</li>
+                <li>具体说明请参考<a href='https://github.com/1PercentSync/sakura-share'>Sakura Share</a>。</li>
+            </ol>
+            </body>
+            </html>
+            """
         )
         description.setTextFormat(Qt.RichText)
         description.setWordWrap(True)
@@ -295,7 +332,70 @@ class CFShareSection(QFrame):
 
         layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-        self.setLayout(layout)
+    def init_metrics_page(self):
+        layout = QVBoxLayout(self.metrics_page)
+        
+        self.metrics_table = TableWidget(self)
+        self.metrics_table.setColumnCount(2)
+        self.metrics_table.setHorizontalHeaderLabels(["指标", "值"])
+        self.metrics_table.verticalHeader().setVisible(False)
+        self.metrics_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        
+        metrics_data = [
+            ("提示词 tokens 总数", "暂无数据"),
+            ("提示词处理总时间", "暂无数据"),
+            ("生成的 tokens 总数", "暂无数据"),
+            ("生成处理总时间", "暂无数据"),
+            ("llama_decode() 调用总次数", "暂无数据"),
+            ("每次 llama_decode() 调用的平均忙碌槽位数", "暂无数据"),
+            ("提示词平均吞吐量", "暂无数据"),
+            ("生成平均吞吐量", "暂无数据"),
+            ("KV-cache 使用率", "暂无数据"),
+            ("KV-cache tokens", "暂无数据"),
+            ("正在处理的请求数", "暂无数据"),
+            ("延迟的请求数", "暂无数据"),
+        ]
+        
+        self.metrics_table.setRowCount(len(metrics_data))
+        for row, (metric, value) in enumerate(metrics_data):
+            self.metrics_table.setItem(row, 0, QTableWidgetItem(metric))
+            self.metrics_table.setItem(row, 1, QTableWidgetItem(value))
+        
+        layout.addWidget(self.metrics_table)
+        
+        tooltips = {
+            "提示词 tokens 总数": "已处理的提示词 tokens 总数",
+            "提示词处理总时间": "提示词处理的总时间",
+            "生成的 tokens 总数": "已生成的 tokens 总数",
+            "生成处理总时间": "生成处理的总时间",
+            "llama_decode() 调用总次数": "llama_decode() 函数的总调用次数",
+            "每次 llama_decode() 调用的平均忙碌槽位数": "每次 llama_decode() 调用时的平均忙碌槽位数",
+            "提示词平均吞吐量": "提示词的平均处理速度",
+            "生成平均吞吐量": "生成的平均速度",
+            "KV-cache 使用率": "KV-cache 的使用率（1 表示 100% 使用）",
+            "KV-cache tokens": "KV-cache 中的 token 数量",
+            "正在处理的请求数": "当前正在处理的请求数",
+            "延迟的请求数": "被延迟的请求数",
+        }
+        
+        for row in range(self.metrics_table.rowCount()):
+            metric_item = self.metrics_table.item(row, 0)
+            if metric_item:
+                metric_item.setToolTip(tooltips.get(metric_item.text(), ""))
+
+    def init_ranking_page(self):
+        layout = QVBoxLayout(self.ranking_page)
+        
+        self.ranking_table = TableWidget(self)
+        self.ranking_table.setColumnCount(2)
+        self.ranking_table.setHorizontalHeaderLabels(["用户名", "计数"])
+        self.ranking_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        
+        layout.addWidget(self.ranking_table)
+        
+        self.refresh_ranking_button = PushButton(FIF.SYNC, "刷新排名", self)
+        self.refresh_ranking_button.clicked.connect(self.refresh_ranking)
+        layout.addWidget(self.refresh_ranking_button)
 
     @Slot()
     def start_cf_share(self):
@@ -339,7 +439,7 @@ class CFShareSection(QFrame):
     @Slot()
     def stop_cf_share(self):
         if self.worker:
-            self.worker.stop()
+            QMetaObject.invokeMethod(self.worker, "stop", Qt.QueuedConnection)
             self.worker.wait()
             self.worker = None
 
@@ -351,32 +451,55 @@ class CFShareSection(QFrame):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
 
+        self.status_label.setText("状态: 未运行")
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+
     @Slot(dict)
     def update_metrics_display(self, metrics):
-        for key, label in self.metrics_labels.items():
-            if key in metrics:
-                value = metrics[key]
-                if key in ["prompt_tokens_total", "tokens_predicted_total"]:
-                    label.setText(f"{label.text().split(':')[0]}: {value:.0f} tokens")
-                elif key in ["prompt_seconds_total", "tokens_predicted_seconds_total"]:
-                    label.setText(f"{label.text().split(':')[0]}: {value:.2f} 秒")
-                elif key == "n_decode_total":
-                    label.setText(f"{label.text().split(':')[0]}: {value:.0f} 次")
-                elif key == "n_busy_slots_per_decode":
-                    label.setText(f"{label.text().split(':')[0]}: {value:.2f}")
-                elif key in ["prompt_tokens_seconds", "predicted_tokens_seconds"]:
-                    label.setText(f"{label.text().split(':')[0]}: {value:.2f} tokens/s")
-                elif key == "kv_cache_usage_ratio":
-                    label.setText(f"{label.text().split(':')[0]}: {value*100:.2f}%")
-                elif key == "kv_cache_tokens":
-                    label.setText(f"{label.text().split(':')[0]}: {value:.0f} tokens")
-                elif key in ["requests_processing", "requests_deferred"]:
-                    label.setText(f"{label.text().split(':')[0]}: {value:.0f}")
-                else:
-                    label.setText(f"{label.text().split(':')[0]}: {value:.2f}")
-            else:
-                # 如果某个指标不存在,保持原来的文本
-                pass
+        for row in range(self.metrics_table.rowCount()):
+            metric_item = self.metrics_table.item(row, 0)
+            value_item = self.metrics_table.item(row, 1)
+            if metric_item and value_item:
+                metric_text = metric_item.text()
+                key = self.get_metric_key(metric_text)
+                if key in metrics:
+                    value = metrics[key]
+                    if key in ["prompt_tokens_total", "tokens_predicted_total"]:
+                        value_item.setText(f"{value:.0f} tokens")
+                    elif key in ["prompt_seconds_total", "tokens_predicted_seconds_total"]:
+                        value_item.setText(f"{value:.2f} 秒")
+                    elif key == "n_decode_total":
+                        value_item.setText(f"{value:.0f} 次")
+                    elif key == "n_busy_slots_per_decode":
+                        value_item.setText(f"{value:.2f}")
+                    elif key in ["prompt_tokens_seconds", "predicted_tokens_seconds"]:
+                        value_item.setText(f"{value:.2f} tokens/s")
+                    elif key == "kv_cache_usage_ratio":
+                        value_item.setText(f"{value*100:.2f}%")
+                    elif key == "kv_cache_tokens":
+                        value_item.setText(f"{value:.0f} tokens")
+                    elif key in ["requests_processing", "requests_deferred"]:
+                        value_item.setText(f"{value:.0f}")
+                    else:
+                        value_item.setText(f"{value:.2f}")
+
+    def get_metric_key(self, metric_text):
+        key_map = {
+            "提示词 tokens 总数": "prompt_tokens_total",
+            "提示词处理总时间": "prompt_seconds_total",
+            "生成的 tokens 总数": "tokens_predicted_total",
+            "生成处理总时间": "tokens_predicted_seconds_total",
+            "llama_decode() 调用总次数": "n_decode_total",
+            "每次 llama_decode() 调用的平均忙碌槽位数": "n_busy_slots_per_decode",
+            "提示词平均吞吐量": "prompt_tokens_seconds",
+            "生成平均吞吐量": "predicted_tokens_seconds",
+            "KV-cache 使用率": "kv_cache_usage_ratio",
+            "KV-cache tokens": "kv_cache_tokens",
+            "正在处理的请求数": "requests_processing",
+            "延迟的请求数": "requests_deferred",
+        }
+        return key_map.get(metric_text, "")
 
     def save_settings(self):
         settings = {"worker_url": self.worker_url_input.text().strip()}
@@ -422,6 +545,33 @@ class CFShareSection(QFrame):
         self.slots_status_label.setText(status)
         self.refresh_slots_button.setEnabled(True)
 
+    @Slot()
+    def refresh_ranking(self):
+        worker_url = self.worker_url_input.text().strip()
+        if not worker_url:
+            MessageBox("错误", "请输入WORKER_URL", self).exec_()
+            return
+        
+        self.refresh_ranking_button.setEnabled(False)
+        
+        worker = RankingRefreshWorker(worker_url)
+        worker.signals.result.connect(self.update_ranking)
+        QThreadPool.globalInstance().start(worker)
+
+    @Slot(object)
+    def update_ranking(self, ranking_data):
+        if "error" in ranking_data:
+            MessageBox("错误", f"获取排名失败: {ranking_data['error']}", self).exec_()
+        else:
+            self.ranking_table.setRowCount(0)
+            for username, count in sorted(ranking_data.items(), key=lambda item: int(item[1]), reverse=True):
+                row = self.ranking_table.rowCount()
+                self.ranking_table.insertRow(row)
+                self.ranking_table.setItem(row, 0, QTableWidgetItem(username))
+                self.ranking_table.setItem(row, 1, QTableWidgetItem(str(count)))
+        
+        self.refresh_ranking_button.setEnabled(True)
+
     def check_local_health_status(self):
         port = self.main_window.run_server_section.port_input.text().strip()
         health_url = f"http://localhost:{port}/health"
@@ -441,9 +591,15 @@ class CFShareSection(QFrame):
 
     def register_node(self):
         try:
+            json_data = {
+                "url": self.tunnel_url,
+                "tg_token": self.tg_token_input.text().strip() or None
+            }
+            json_data = {k: v for k, v in json_data.items() if v is not None}
+
             api_response = requests.post(
                 f"{self.worker.worker_url}/register-node",
-                json={"url": self.tunnel_url},
+                json=json_data,
                 headers={"Content-Type": "application/json"},
             )
             self.main_window.log_info(f"API Response: {api_response.text}")
@@ -460,3 +616,8 @@ class CFShareSection(QFrame):
             self.main_window.log_info(f"Offline Response: {offline_response.text}")
         except Exception as e:
             self.main_window.log_info(f"Error taking node offline: {str(e)}")
+    
+    def __del__(self):
+        if self.worker:
+            self.worker.stop()
+            self.worker.wait()

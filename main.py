@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
 )
-from PySide6.QtGui import QIcon, QColor
+from PySide6.QtGui import QIcon, QColor, QFont
 from qfluentwidgets import (
     MessageBox,
     setTheme,
@@ -383,6 +383,9 @@ if __name__ == "__main__":
     setTheme(Theme.DARK)
     setThemeColor(QColor(222, 142, 204))
     app = QApplication(sys.argv)
+    better_font = QFont()
+    better_font.setHintingPreference(QFont.PreferNoHinting)
+    app.setFont(better_font)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

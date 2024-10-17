@@ -5,9 +5,7 @@ import subprocess
 import re
 import shutil
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (
-    QApplication,
-)
+from PySide6.QtWidgets import QApplication, QAbstractScrollArea
 from PySide6.QtGui import QIcon, QColor, QFont
 from qfluentwidgets import (
     MessageBox,
@@ -43,6 +41,16 @@ class MainWindow(MSFluentWindow):
                 "错误", f"cloudflared 可执行文件不存在: {cloudflared_path}", self
             ).exec()
         self.load_window_state()
+
+        # 黑魔法，强行覆盖函数以关闭标签页切换动画
+        def setCurrentWidget(widget, _=True):
+            if isinstance(widget, QAbstractScrollArea):
+                widget.verticalScrollBar().setValue(0)
+            self.stackedWidget.view.setCurrentWidget(widget, duration=0)
+
+        self.stackedWidget.setCurrentWidget = (
+            lambda widget, popOut=True: setCurrentWidget(widget, popOut)
+        )
 
     def init_navigation(self):
         self.settings_section = SettingsSection("设置", self)

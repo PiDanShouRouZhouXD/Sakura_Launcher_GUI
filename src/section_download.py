@@ -1,6 +1,5 @@
 import os
 import requests
-from hashlib import sha256
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import (
     QApplication,
@@ -160,46 +159,41 @@ class DownloadSection(QFrame):
         self.init_ui()
 
     def init_ui(self):
-        self.pivot = SegmentedWidget()
-        self.stacked_widget = QStackedWidget()
-        self.layout = QVBoxLayout()
+        pivot = SegmentedWidget()
+        stacked_widget = QStackedWidget()
 
-        self.add_sub_interface(
+        def add_sub_interface(widget: QWidget, object_name, text):
+            widget.setObjectName(object_name)
+            stacked_widget.addWidget(widget)
+            pivot.addItem(
+                routeKey=object_name,
+                text=text,
+                onClick=lambda: stacked_widget.setCurrentWidget(widget),
+            )
+
+        add_sub_interface(
             self._create_sakura_download_section(),
             "model_download_section",
             "模型下载",
         )
-        self.add_sub_interface(
+        add_sub_interface(
             self._create_llamacpp_download_section(),
             "llamacpp_download_section",
             "llama.cpp下载",
         )
 
-        self.layout.addWidget(self.pivot)
-        self.layout.addWidget(self.stacked_widget)
+        pivot.setCurrentItem(stacked_widget.currentWidget().objectName())
 
         # 添加全局进度条
-        self.global_progress_bar = ProgressBar(self)
-        self.layout.addWidget(self.global_progress_bar)
+        self.global_progress_bar = ProgressBar()
 
-        self.stacked_widget.currentChanged.connect(self.on_current_index_changed)
-        self.stacked_widget.setCurrentIndex(0)
-        self.pivot.setCurrentItem(self.stacked_widget.currentWidget().objectName())
-
-        self.setLayout(self.layout)
-
-    def add_sub_interface(self, widget: QWidget, object_name, text):
-        widget.setObjectName(object_name)
-        self.stacked_widget.addWidget(widget)
-        self.pivot.addItem(
-            routeKey=object_name,
-            text=text,
-            onClick=lambda: self.stacked_widget.setCurrentWidget(widget),
+        self.setLayout(
+            UiCol(
+                pivot,
+                stacked_widget,
+                self.global_progress_bar,
+            )
         )
-
-    def on_current_index_changed(self, index):
-        widget = self.stacked_widget.widget(index)
-        self.pivot.setCurrentItem(widget.objectName())
 
     def _create_sakura_download_section(self):
         def on_src_change(text):

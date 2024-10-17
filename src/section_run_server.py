@@ -491,14 +491,11 @@ class RunServerSection(QFrame):
                     return {}
         return {}
 
-    # 修改方法
     def toggle_advanced_settings(self):
         new_state = not self.menu_advance.isVisible()
         self.menu_advance.setVisible(new_state)
-
-    # 新增方法
-    def get_advanced_state(self):
-        return self.menu_advance.isVisible()
+        if self.main_window.settings_section.remember_advanced_state.isChecked():
+            self.save_advanced_state()
 
     def load_advanced_state(self):
         config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
@@ -512,3 +509,12 @@ class RunServerSection(QFrame):
                 self.menu_advance.setVisible(config.get("advanced_state", False))
         except (FileNotFoundError, json.JSONDecodeError):
             pass
+
+    def save_advanced_state(self):
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+            config_data["advanced_state"] = (
+                self.menu_advance.isVisible()
+            )
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=4)

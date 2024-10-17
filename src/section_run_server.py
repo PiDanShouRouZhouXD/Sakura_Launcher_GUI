@@ -153,12 +153,12 @@ class RunServerSection(QFrame):
             UiOptionRow(
                 "上下文长度 -c",
                 self._create_context_length_layout(),
-                label_width=72,
+                label_width=74,
             ),
             UiOptionRow(
                 "并发数量 -np",
                 UiSlider(self, "n_parallel", 1, 1, 32, 1, spinbox_fixed_width=140),
-                label_width=72,
+                label_width=74,
             ),
             self.context_per_thread_label,
         )
@@ -453,7 +453,7 @@ class RunServerSection(QFrame):
                 if preset["name"] == preset_name:
                     config = preset["config"]
                     self.custom_command.setPlainText(config.get("custom_command", ""))
-                    self.custom_command_append.setPlainText(
+                    self.custom_command_append.setText(
                         config.get("custom_command_append", "")
                     )
                     self.gpu_layers_spinbox.setValue(config.get("gpu_layers", 200))

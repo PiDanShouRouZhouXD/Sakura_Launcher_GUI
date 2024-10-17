@@ -115,139 +115,125 @@ class RunServerSection(QFrame):
         self.load_advanced_state()  # 新增：加载高级设置状态
 
     def _init_ui(self):
-        layout_advance = QVBoxLayout()
-        layout_advance.setContentsMargins(0, 0, 0, 0)  # 确保布局的边距也被移除
-        layout_advance.addWidget(UiHLine(self))
-        self._init_advance_options(layout_advance)
-        self._init_override_options(layout_advance)
-        self.menu_advance = QFrame()
-        self.menu_advance.setContentsMargins(0, 0, 0, 0)  # 移除内部边距
-        self.menu_advance.setLayout(layout_advance)
-        self.menu_advance.setVisible(False)
+        menu_base = self._create_menu_base()
+        menu_advance = self._create_advance_menu()
 
         layout = QVBoxLayout()
-
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setAlignment(Qt.AlignRight)
-
-        self.advance_button = PushButton(FIF.MORE, "高级设置", self)
-        self.advance_button.setFixedSize(110, 30)
-        self.advance_button.clicked.connect(self.toggle_advanced_settings)
-        buttons_layout.addWidget(self.advance_button)
-
-        self.benchmark_button = PushButton(FIF.UNIT, "性能测试", self)
-        self.benchmark_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.benchmark_button)
-
-        # 新增运行并共享按钮
-        self.run_and_share_button = PushButton(FIF.IOT, "运行并共享", self)
-        self.run_and_share_button.setFixedSize(140, 30)
-        buttons_layout.addWidget(self.run_and_share_button)
-
-        self.run_button = PrimaryPushButton(FIF.PLAY, "运行", self)
-        self.run_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.run_button)
-
-        buttons_group = QGroupBox("")
-        buttons_group.setStyleSheet(
-            """ QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}"""
-        )
-        buttons_group.setLayout(buttons_layout)
-        layout.addWidget(buttons_group)
-
-        layout.addLayout(UiRow("模型", self._create_model_selection_layout()))
-        layout.addLayout(UiRow("显卡", self._create_gpu_selection_layout()))
-
-        layout.addLayout(UiRow("上下文长度 -c", self._create_context_length_layout()))
-        layout.addLayout(
-            UiRow(
-                "工作线程数量 -np",
-                UiSlider(self, "n_parallel", 1, 1, 32, 1, spinbox_fixed_width=140),
-            )
-        )
-
-        self.context_per_thread_label = QLabel(self)
-        layout.addWidget(self.context_per_thread_label)
+        layout.addLayout(menu_base)
+        layout.addWidget(menu_advance)
         layout.insertStretch(-1)
-
-        layout.addWidget(self.menu_advance)
         self.setLayout(layout)
 
         self.context_length_input.valueChanged.connect(self.update_slider_from_input)
         self.context_length.valueChanged.connect(self.update_context_per_thread)
         self.n_parallel_spinbox.valueChanged.connect(self.update_context_per_thread)
-
         self.update_context_per_thread()
 
-    def _create_preset_options(self):
-        preset_layout = QHBoxLayout()
+    def _create_menu_base(self):
+        self.advance_button = PushButton(FIF.MORE, "高级设置")
+        self.advance_button.clicked.connect(self.toggle_advanced_settings)
 
+        self.benchmark_button = PushButton(FIF.UNIT, "性能测试")
+        self.run_and_share_button = PushButton(FIF.IOT, "启动/共享")
+        self.run_button = PrimaryPushButton(FIF.PLAY, "启动")
+
+        buttons_group = UiButtonGroup(
+            self.advance_button,
+            self.benchmark_button,
+            self.run_and_share_button,
+            self.run_button,
+        )
+
+        self.context_per_thread_label = QLabel()
+
+        return UiCol(
+            buttons_group,
+            UiOptionRow("模型", self._create_model_selection_layout()),
+            UiOptionRow("显卡", self._create_gpu_selection_layout()),
+            UiOptionRow(
+                "上下文长度 -c",
+                self._create_context_length_layout(),
+                label_width=72,
+            ),
+            UiOptionRow(
+                "并发数量 -np",
+                UiSlider(self, "n_parallel", 1, 1, 32, 1, spinbox_fixed_width=140),
+                label_width=72,
+            ),
+            self.context_per_thread_label,
+        )
+
+    def _create_preset_options(self):
         self.config_preset_combo = EditableComboBox(self)
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
-        preset_layout.addWidget(self.config_preset_combo)
 
-        self.save_preset_button = PushButton(FIF.SAVE, "保存", self)
+        self.save_preset_button = PushButton(FIF.SAVE, "保存")
         self.save_preset_button.clicked.connect(self.save_preset)
-        preset_layout.addWidget(self.save_preset_button)
 
-        self.load_preset_button = PushButton(FIF.SYNC, "刷新", self)
+        self.load_preset_button = PushButton(FIF.SYNC, "刷新")
         self.load_preset_button.clicked.connect(self.load_presets)
-        preset_layout.addWidget(self.load_preset_button)
 
-        return preset_layout
+        return UiRow(
+            (self.config_preset_combo, 1),
+            (self.save_preset_button, 0),
+            (self.load_preset_button, 0),
+        )
 
     def _create_ip_port_log_option(self):
-        self.host_input = UiEditableComboBox(self, ["127.0.0.1", "0.0.0.0"])
-        self.port_input = UiLineEdit(self, "", "8080")
-        self.log_format_combo = UiEditableComboBox(self, ["none", "text", "json"])
-        return UiCol3(
-            UiCol("主机地址 --host", self.host_input),
-            UiCol("端口 --port", self.port_input),
-            UiCol("日志格式 --log-format", self.log_format_combo),
+        self.host_input = UiEditableComboBox(["127.0.0.1", "0.0.0.0"])
+        self.port_input = UiLineEdit("", "8080")
+        self.log_format_combo = UiEditableComboBox(["none", "text", "json"])
+        return UiRow(
+            UiOptionCol("主机地址 --host", self.host_input),
+            UiOptionCol("端口 --port", self.port_input),
+            UiOptionCol("日志格式 --log-format", self.log_format_combo),
         )
 
     def _create_benchmark_layout(self):
-        self.npp_input = UiLineEdit(self, "Prompt数量", "768")
-        self.ntg_input = UiLineEdit(self, "生成文本数量", "384")
-        self.npl_input = UiLineEdit(self, "并行Prompt数量", "1,2,4,8,16")
-        return UiCol3(
-            UiCol("Prompt数量 -npp", self.npp_input),
-            UiCol("生成文本数量 -ntg", self.ntg_input),
-            UiCol("并行Prompt数量 -npl", self.npl_input),
+        self.npp_input = UiLineEdit("Prompt数量", "768")
+        self.ntg_input = UiLineEdit("生成文本数量", "384")
+        self.npl_input = UiLineEdit("并行Prompt数量", "1,2,4,8,16")
+        return UiRow(
+            UiOptionCol("Prompt数量 -npp", self.npp_input),
+            UiOptionCol("生成文本数量 -ntg", self.ntg_input),
+            UiOptionCol("并行Prompt数量 -npl", self.npl_input),
         )
 
-    def _init_advance_options(self, layout):
-        self.flash_attention_check = UiCheckBox(self, "启用 Flash Attention -fa", True)
-        self.no_mmap_check = UiCheckBox(self, "启用 --no-mmap", True)
-        layout_extra_options = UiCol3(
+    def _create_advance_menu(self):
+        self.flash_attention_check = UiCheckBox("启用 Flash Attention -fa", True)
+        self.no_mmap_check = UiCheckBox("启用 --no-mmap", True)
+        layout_extra_options = UiRow(
             self.flash_attention_check,
             self.no_mmap_check,
+            None,
         )
         layout_extra_options.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
-        layout.addLayout(layout_extra_options)
 
-        layout.addLayout(UiRow("配置预设选择", self._create_preset_options()))
-        layout.addLayout(
-            UiRow("GPU层数 -ngl", UiSlider(self, "gpu_layers", 200, 0, 200, 1))
-        )
-        layout.addLayout(self._create_ip_port_log_option())
+        self.llamacpp_override = UiLineEdit("覆盖默认llamacpp路径（可选）", "")
+        self.custom_command_append = UiLineEdit("手动追加命令，到UI选择的命令后", "")
 
-        layout.addLayout(self._create_benchmark_layout())
-
-    def _init_override_options(self, layout):
-        # 新增llamacpp覆盖选项
-        self.llamacpp_override = UiLineEdit(self, "覆盖默认llamacpp路径（可选）", "")
-        layout.addWidget(self.llamacpp_override)
-
-        self.custom_command_append = TextEdit(self)
-        self.custom_command_append.setPlaceholderText(
-            "手动追加命令（追加到UI选择的命令后）"
-        )
-        layout.addWidget(self.custom_command_append)
-
-        self.custom_command = TextEdit(self)
+        self.custom_command = TextEdit()
         self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
-        layout.addWidget(self.custom_command)
+
+        layout = UiCol(
+            UiHLine(),
+            layout_extra_options,
+            UiOptionRow("配置预设选择", self._create_preset_options()),
+            UiOptionRow(
+                "GPU层数 -ngl",
+                UiSlider(self, "gpu_layers", 200, 0, 200, 1, spinbox_fixed_width=140),
+            ),
+            self._create_ip_port_log_option(),
+            self._create_benchmark_layout(),
+            self.llamacpp_override,
+            self.custom_command_append,
+            self.custom_command,
+        )
+        layout.setContentsMargins(0, 0, 0, 0)  # 确保布局的边距也被移除
+        self.menu_advance = QFrame()
+        self.menu_advance.setLayout(layout)
+        self.menu_advance.setVisible(False)
+        return self.menu_advance
 
     def _create_context_length_layout(self):
         layout = QHBoxLayout()
@@ -274,7 +260,7 @@ class RunServerSection(QFrame):
         layout = QHBoxLayout()
         self.model_path = EditableComboBox(self)
         self.model_path.setPlaceholderText("请选择模型路径")
-        self.refresh_model_button = PushButton(FIF.SYNC, "刷新", self)
+        self.refresh_model_button = PushButton(FIF.SYNC, "刷新")
         self.refresh_model_button.clicked.connect(self.refresh_models)
         self.refresh_model_button.setFixedWidth(140)
         layout.addWidget(self.model_path)

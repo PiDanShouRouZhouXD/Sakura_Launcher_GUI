@@ -52,16 +52,24 @@ def _llamacpp(filename: str):
     )
 
 
+LLAMACPP_DOWNLOAD_SRC = [
+    "GitHub",
+    "GHProxy",
+]
+
 LLAMACPP_LIST: List[Llamacpp] = [
     _llamacpp("llama-b3923-bin-win-cuda-cu12.2.0-x64.zip"),
     _llamacpp("llama-b3384-bin-win-rocm-avx2-x64.zip"),
     _llamacpp("llama-b3534-bin-win-rocm-avx512-x64.zip"),
     _llamacpp("llama-b3923-bin-win-vulkan-x64.zip"),
 ]
-LLAMACPP_CUDART_FILENAME = "cudart-llama-bin-win-cu12.2.0-x64.zip"
-LLAMACPP_CUDART_DOWNLOAD_LINK = {
-    "GitHub": "https://github.com/ggerganov/llama.cpp/releases/download/b3926/cudart-llama-bin-win-cu12.2.0-x64.zip",
-    "GHProxy": "https://ghp.ci/https://github.com/ggerganov/llama.cpp/releases/download/b3926/cudart-llama-bin-win-cu12.2.0-x64.zip",
+
+LLAMACPP_CUDART = {
+    "filename": "cudart-llama-bin-win-cu12.2.0-x64.zip",
+    "download_links": {
+        "GitHub": "https://github.com/ggerganov/llama.cpp/releases/download/b3926/cudart-llama-bin-win-cu12.2.0-x64.zip",
+        "GHProxy": "https://ghp.ci/https://github.com/ggerganov/llama.cpp/releases/download/b3926/cudart-llama-bin-win-cu12.2.0-x64.zip",
+    },
 }
 
 

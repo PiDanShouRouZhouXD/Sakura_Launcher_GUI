@@ -282,9 +282,10 @@ class CFShareSection(QFrame):
             <p>这是一个一键分享你本地部署的Sakura模型给其他用户（成为帕鲁）的工具，服务端部署请按照下面的仓库的文档进行。</p>
             <p>注意：</p>
             <ol>
+                <li><span style='color: #AA0000; font-weight: bold;'>在线排名功能暂时不可用，请耐心等待服务端升级。</span></li>
                 <li>请确保本地服务已启动。</li>
-                <li>请确保WORKER_URL正确。<br>
-                <span>如无特殊需求，请使用默认的WORKER_URL，此链接是由共享脚本开发者本人维护的。</span></li>
+                <li>请确保「链接」正确。</li>
+                <li>如无特殊需求，请使用默认的链接。此链接是由共享脚本开发者本人维护的。</li>
                 <li>目前仅支持Windows系统，其他系统请自行更改脚本。</li>
                 <li>目前仅支持一种模型：
                     <ul>
@@ -295,8 +296,9 @@ class CFShareSection(QFrame):
             </ol>
             <p>关于贡献统计：</p>
             <ol>
-                <li>贡献统计是可选的，如果你不希望参与贡献统计，可以不填写Token。</li>
-                <li>贡献统计需要你从TG@SakuraShareBot获取Token，并在此处填写。</li>
+                <li>贡献统计是可选的，如果你不希望参与贡献统计，可以不填写「令牌」。</li>
+                <li>贡献统计需要你从<a href='https://t.me/SakuraShareBot'>@SakuraShareBot</a>获取「令牌（Token）」，并在此处填写。</li>
+                <li>可以在「在线排名」标签中查看贡献排名。</li>
                 <li>具体说明请参考<a href='https://github.com/1PercentSync/sakura-share'>Sakura Share</a>。</li>
             </ol>
             </body>
@@ -304,6 +306,7 @@ class CFShareSection(QFrame):
             """
         )
         description.setTextFormat(Qt.RichText)
+        description.setOpenExternalLinks(True)
         description.setWordWrap(True)
         description.setStyleSheet(
             """

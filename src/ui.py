@@ -1,5 +1,6 @@
+from typing import List, Tuple
 from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QFrame
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QFrame, QLayout
 from qfluentwidgets import (
     CheckBox,
     FluentStyleSheet,
@@ -61,8 +62,8 @@ def addCustomWidgetStyle(widget: QWidget, customStyle: str):
     custom_style_manager.addCustomStyle(widget, customStyle)
 
 
-def UiCheckBox(parent, text, checked):
-    w = CheckBox(parent)
+def UiCheckBox(text, checked):
+    w = CheckBox()
     w.setText(text)
     w.setChecked(checked)
 
@@ -93,8 +94,8 @@ def UiCheckBox(parent, text, checked):
     return w
 
 
-def UiLineEdit(parent, placeholder, text):
-    w = LineEdit(parent)
+def UiLineEdit(placeholder, text=""):
+    w = LineEdit()
     w.setPlaceholderText(placeholder)
     w.setText(text)
     return w
@@ -138,12 +139,59 @@ def UiSlider(
     return h_layout
 
 
-def UiHLine(self):
-    w = QFrame(self)
+def UiEditableComboBox(items):
+    combo_box = EditableComboBox()
+    combo_box.addItems(items)
+    return combo_box
+
+
+Child = QWidget | QLayout | None
+
+
+def UiRow(*items: List[Tuple[Child, int] | Child]):
+    layout = QHBoxLayout()
+    for item in items:
+        child = item
+        weight = 1.0
+        if type(item) is tuple:
+            child, weight = item
+        if issubclass(type(child), QWidget):
+            layout.addWidget(child)
+            layout.setStretchFactor(child, weight)
+        elif issubclass(type(child), QLayout):
+            layout.addLayout(child)
+            layout.setStretchFactor(child, weight)
+        else:
+            layout.addStretch(1.0)
+    return layout
+
+
+def UiCol(*items: List[Child]):
+    layout = QVBoxLayout()
+    for child in items:
+        if issubclass(type(child), QWidget):
+            layout.addWidget(child)
+        elif issubclass(type(child), QLayout):
+            layout.addLayout(child)
+    return layout
+
+
+def UiOptionCol(text, content):
+    return UiCol(QLabel(text), content)
+
+
+def UiOptionRow(text, content, label_width=None):
+    label = QLabel(text)
+    if label_width:
+        label.setFixedWidth(label_width)
+    return UiRow((label, 0), content)
+
+
+def UiHLine():
+    w = QFrame()
     w.setFrameShape(QFrame.HLine)
     w.setFrameShadow(QFrame.Plain)  # 改为Plain以去除阴影效果
     w.setFixedHeight(32)
-    # 使用更深的灰色作为背景色，并设置上下边距
     w.setStyleSheet(
         """
         background-color: #393939;
@@ -156,42 +204,11 @@ def UiHLine(self):
     return w
 
 
-def UiEditableComboBox(parent, items):
-    combo_box = EditableComboBox(parent)
-    combo_box.addItems(items)
-    return combo_box
-
-
-def addWidgetOrLayout(layout, content):
-    if issubclass(type(content), QWidget):
-        layout.addWidget(content)
-    else:
-        layout.addLayout(content)
-
-
-def UiRow(text, content):
-    layout = QHBoxLayout()
-    layout.addWidget(QLabel(text))
-    addWidgetOrLayout(layout, content)
-    return layout
-
-
-def UiCol(text, content):
-    layout = QVBoxLayout()
-    layout.addWidget(QLabel(text))
-    addWidgetOrLayout(layout, content)
-    return layout
-
-
-def UiCol3(c1, c2, c3=None):
-    layout = QHBoxLayout()
-    addWidgetOrLayout(layout, c1)
-    addWidgetOrLayout(layout, c2)
-    layout.setStretchFactor(c1, 1.0)
-    layout.setStretchFactor(c2, 1.0)
-    if c3:
-        addWidgetOrLayout(layout, c3)
-        layout.setStretchFactor(c3, 1.0)
-    else:
-        layout.addStretch(1.0)
-    return layout
+def UiButtonGroup(*children: List[Child]):
+    buttons_layout = UiRow(None, *[(child, 0) for child in children])
+    buttons_group = QFrame()
+    buttons_group.setStyleSheet(
+        """QFrame {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}"""
+    )
+    buttons_group.setLayout(buttons_layout)
+    return buttons_group

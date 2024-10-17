@@ -213,6 +213,7 @@ class RunServerSection(QFrame):
         self.custom_command_append = UiLineEdit("手动追加命令，到UI选择的命令后", "")
 
         self.custom_command = TextEdit()
+        self.custom_command.setAcceptRichText(False)
         self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
 
         layout = UiCol(
@@ -392,7 +393,7 @@ class RunServerSection(QFrame):
             "name": preset_name,
             "config": {
                 "custom_command": self.custom_command.toPlainText(),
-                "custom_command_append": self.custom_command_append.toPlainText(),
+                "custom_command_append": self.custom_command_append.text(),
                 "gpu_layers": self.gpu_layers_spinbox.value(),
                 "flash_attention": self.flash_attention_check.isChecked(),
                 "no_mmap": self.no_mmap_check.isChecked(),

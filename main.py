@@ -232,8 +232,8 @@ class MainWindow(MSFluentWindow):
                     command += " -fa"
                 if section.no_mmap_check.isChecked():
                     command += " --no-mmap"
-                if section.custom_command_append.toPlainText().strip():
-                    command += f" {section.custom_command_append.toPlainText().strip()}"
+                if section.custom_command_append.text().strip():
+                    command += f" {section.custom_command_append.text().strip()}"
                 command += " --metrics"
 
                 # 根据版本添加--slots参数
@@ -247,8 +247,8 @@ class MainWindow(MSFluentWindow):
                     command += " -fa 1,0"
                 if section.no_mmap_check.isChecked():
                     command += " -mmp 0"
-                if section.custom_command_append.toPlainText().strip():
-                    command += f" {section.custom_command_append.toPlainText().strip()}"
+                if section.custom_command_append.text().strip():
+                    command += f" {section.custom_command_append.text().strip()}"
             elif old_executable == "llama-batched-bench":
                 command += f" -c {section.context_length_input.value()}"
                 command += f" -ngl {section.gpu_layers_spinbox.value()}"

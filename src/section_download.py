@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
 )
 from qfluentwidgets import (
-    ComboBox,
     MessageBox,
     FluentIcon as FIF,
     TableWidget,
@@ -25,25 +24,41 @@ from qfluentwidgets import (
 
 from .common import CURRENT_DIR, get_self_path
 from .llamacpp import (
-    LLAMACPP_CUDART_DOWNLOAD_LINK,
-    LLAMACPP_CUDART_FILENAME,
+    LLAMACPP_CUDART,
+    LLAMACPP_DOWNLOAD_SRC,
     LLAMACPP_LIST,
     Llamacpp,
     get_latest_cuda_release,
     unzip_llamacpp,
 )
-from .ui import UiHLine
+from .sakura import SAKURA_DOWNLOAD_SRC, SAKURA_LIST, Sakura
+from .ui import *
 
 
-def UiDownloadSrcSelect(items, on_change):
-    comboBox = ComboBox()
-    comboBox.addItems(items)
-    comboBox.currentTextChanged.connect(on_change)
+def UiDescription(html):
+    description = QLabel()
+    description.setText(html)
+    description.setTextFormat(Qt.RichText)
+    description.setWordWrap(True)
+    description.setOpenExternalLinks(True)
+    description.setMargin(16)
+    description.setTextInteractionFlags(
+        Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse
+    )
+    return description
 
-    layout = QHBoxLayout()
-    layout.addWidget(QLabel("下载源"))
-    layout.addWidget(comboBox)
-    return layout
+
+def UiTable(columns):
+    table = TableWidget()
+    table.setColumnCount(len(columns))
+    table.setHorizontalHeaderLabels(columns)
+    vh = table.verticalHeader()
+    hh = table.horizontalHeader()
+    vh.hide()
+    vh.setSectionResizeMode(QHeaderView.ResizeToContents)
+    hh.setSectionResizeMode(QHeaderView.ResizeToContents)
+    hh.setStretchLastSection(True)
+    return table
 
 
 def UiTableLabel(text):
@@ -136,44 +151,28 @@ class DownloadThread(QThread):
 
 class DownloadSection(QFrame):
     llamacpp_download_src = "GHProxy"
-    model_links = [
-        (
-            "GalTransl-7B-v2-IQ4_XS.gguf",
-            "https://hf-mirror.com/SakuraLLM/GalTransl-7B-v2/resolve/main/GalTransl-7B-v2-IQ4_XS.gguf",
-        ),
-        (
-            "sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf",
-            "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf",
-        ),
-        (
-            "sakura-14b-qwen2beta-v0.9.2-q4km.gguf",
-            "https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/resolve/main/sakura-14b-qwen2beta-v0.9.2-q4km.gguf",
-        ),
-    ]
+    sakura_download_src = "HFMirror"
 
     def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
         self.setObjectName(title.replace(" ", "-"))
-        self.resize(400, 400)
         self.init_ui()
 
     def init_ui(self):
-        self.pivot = SegmentedWidget(self)
-        self.stacked_widget = QStackedWidget(self)
-        self.layout = QVBoxLayout(self)
-
-        self.model_download_section = QWidget(self)
-        self.llamacpp_download_section = QWidget(self)
-
-        self.init_model_download_section()
-        self.init_llamacpp_download_section()
+        self.pivot = SegmentedWidget()
+        self.stacked_widget = QStackedWidget()
+        self.layout = QVBoxLayout()
 
         self.add_sub_interface(
-            self.model_download_section, "model_download_section", "模型下载"
+            self._create_sakura_download_section(),
+            "model_download_section",
+            "模型下载",
         )
         self.add_sub_interface(
-            self.llamacpp_download_section, "llamacpp_download_section", "llama.cpp下载"
+            self._create_llamacpp_download_section(),
+            "llamacpp_download_section",
+            "llama.cpp下载",
         )
 
         self.layout.addWidget(self.pivot)
@@ -184,8 +183,8 @@ class DownloadSection(QFrame):
         self.layout.addWidget(self.global_progress_bar)
 
         self.stacked_widget.currentChanged.connect(self.on_current_index_changed)
-        self.stacked_widget.setCurrentWidget(self.model_download_section)
-        self.pivot.setCurrentItem(self.model_download_section.objectName())
+        self.stacked_widget.setCurrentIndex(0)
+        self.pivot.setCurrentItem(self.stacked_widget.currentWidget().objectName())
 
         self.setLayout(self.layout)
 
@@ -202,17 +201,31 @@ class DownloadSection(QFrame):
         widget = self.stacked_widget.widget(index)
         self.pivot.setCurrentItem(widget.objectName())
 
-    def init_model_download_section(self):
-        table = self.create_download_table(["名称", "操作"])
-        for name, url in self.model_links:
+    def _create_sakura_download_section(self):
+        def on_src_change(text):
+            self.sakura_download_src = text
+
+        comboBox = UiRow(
+            QLabel("下载源"),
+            None,
+            UiComboBox(SAKURA_DOWNLOAD_SRC, on_src_change),
+        )
+        on_src_change(SAKURA_DOWNLOAD_SRC[0])
+
+        def create_button(sakura: Sakura):
+            download_fn = lambda: self.start_download_sakura(sakura)
+            button = UiDownloadButton(download_fn)
+            return button
+
+        table = UiTable(["名称", "大小", "操作"])
+        for sakura in SAKURA_LIST:
             row = table.rowCount()
             table.insertRow(row)
-            table.setItem(row, 0, self.create_table_label(name))
-            # 使用默认参数来捕获当前的 url 和 name
-            download_fn = lambda url=url, name=name: self.start_download(url, name)
-            table.setCellWidget(row, 1, self.create_table_button(download_fn))
+            table.setItem(row, 0, UiTableLabel(sakura.filename))
+            table.setItem(row, 1, UiTableLabel(f"{sakura.size}GB"))
+            table.setCellWidget(row, 2, create_button(sakura))
 
-        description = self.create_description_label(
+        description = UiDescription(
             """
         <p>您可以在这里下载不同版本的模型，模型会保存到启动器所在的目录。您也可以手动从<a href="https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/">Hugging Face镜像站</a>下载模型。</p>
         <p>12G以下显存推荐使用GalTransl-7B-v2-IQ4_XS.gguf</p>
@@ -221,10 +234,16 @@ class DownloadSection(QFrame):
         """
         )
 
-        layout = QVBoxLayout(self.model_download_section)
-        layout.addWidget(description)
-        layout.addWidget(table)
-        self.model_download_section.setLayout(layout)
+        section = QWidget()
+        section.setLayout(
+            UiCol(
+                description,
+                UiHLine(),
+                comboBox,
+                table,
+            )
+        )
+        return section
 
     def refresh_llamacpp_table(self):
         table = self.llamacpp_table
@@ -243,20 +262,24 @@ class DownloadSection(QFrame):
             table.setItem(row, 1, UiTableLabel(llamacpp.gpu))
             table.setCellWidget(row, 2, create_button(llamacpp=llamacpp))
 
-    def init_llamacpp_download_section(self):
+    def _create_llamacpp_download_section(self):
         try:
             get_latest_cuda_release()
         except Exception as e:
             self.main_window.log_info(f"获取最新CUDA版本时出错: {str(e)}")
 
-        self.llamacpp_table = self.create_download_table(["版本", "适合显卡", "下载"])
+        self.llamacpp_table = UiTable(["版本", "适合显卡", "下载"])
         self.refresh_llamacpp_table()
 
         def on_src_change(text):
             self.llamacpp_download_src = text
 
-        comboBox = UiDownloadSrcSelect(["GHProxy", "GitHub"], on_src_change)
-        on_src_change("GHProxy")
+        comboBox = UiRow(
+            QLabel("下载源"),
+            None,
+            UiComboBox(LLAMACPP_DOWNLOAD_SRC, on_src_change),
+        )
+        on_src_change(LLAMACPP_DOWNLOAD_SRC[0])
 
         def create_cudart_button():
             download_fn = lambda: self.start_download_cudart()
@@ -268,7 +291,7 @@ class DownloadSection(QFrame):
 
         cudart_button = create_cudart_button()
 
-        description = self.create_description_label(
+        description = UiDescription(
             """
         <p>下载的llama.cpp会解压到启动器所在的目录，如果存在旧版本，会自动覆盖。你也可以手动从<a href="https://github.com/ggerganov/llama.cpp/releases">GitHub发布页面</a>下载发行版。</p>
         <p><b>ROCm支持的AMD独显型号(感谢Sora维护)</b>
@@ -291,50 +314,28 @@ class DownloadSection(QFrame):
         """
         )
 
-        layout = QVBoxLayout(self.llamacpp_download_section)
-        layout.addWidget(description)
-        layout.addWidget(UiHLine())
-        layout.addLayout(comboBox)
-        layout.addLayout(cudart_button)
-        layout.addWidget(self.llamacpp_table)
-        self.llamacpp_download_section.setLayout(layout)
-
-    def create_description_label(self, content):
-        description = QLabel()
-        description.setText(content)
-        description.setTextFormat(Qt.RichText)
-        description.setWordWrap(True)
-        description.setOpenExternalLinks(True)  # 允许打开外部链接
-        description.setMargin(16)
-        description.setTextInteractionFlags(
-            Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse
+        section = QWidget()
+        section.setLayout(
+            UiCol(
+                description,
+                UiHLine(),
+                comboBox,
+                cudart_button,
+                self.llamacpp_table,
+            )
         )
-        return description
+        return section
 
-    def create_download_table(self, columns):
-        table = TableWidget()
-        table.setColumnCount(len(columns))
-        table.setHorizontalHeaderLabels(columns)
-        table.verticalHeader().hide()
-        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        table.horizontalHeader().setStretchLastSection(True)
-        return table
-
-    def create_table_label(self, text):
-        item = QTableWidgetItem(text)
-        item.setFlags(Qt.ItemIsEnabled)
-        return item
-
-    def create_table_button(self, download_function):
-        download_button = TransparentPushButton(FIF.DOWNLOAD, "下载")
-        download_button.clicked.connect(download_function)
-        return download_button
+    def start_download_sakura(self, sakura: Sakura):
+        src = self.sakura_download_src
+        url = sakura.download_links[src]
+        self.start_download(url, sakura.filename)
 
     def start_download_cudart(self):
+        cudart = LLAMACPP_CUDART
         src = self.llamacpp_download_src
-        url = LLAMACPP_CUDART_DOWNLOAD_LINK[src]
-        self.start_download(url, LLAMACPP_CUDART_FILENAME)
+        url = cudart["download_links"][src]
+        self.start_download(url, cudart["filename"])
 
     def start_download_llamacpp(self, llamacpp: Llamacpp):
         src = self.llamacpp_download_src
@@ -405,22 +406,9 @@ class DownloadSection(QFrame):
                     os.remove(file_path)
         else:
             # 对模型文件进行SHA256校验
-            expected_sha256 = ""
-            if downloaded_file == "GalTransl-7B-v2-IQ4_XS.gguf":
-                expected_sha256 = (
-                    "8749e704993a2c327f319278818ba0a7f9633eae8ed187d54eb63456a11812aa"
-                )
-            elif downloaded_file == "sakura-14b-qwen2beta-v0.9.2-iq4xs.gguf":
-                expected_sha256 = (
-                    "254a7e97e5e2a5daa371145e55bb2b0a0a789615dab2d4316189ba089a3ced67"
-                )
-            elif downloaded_file == "sakura-14b-qwen2beta-v0.9.2-q4km.gguf":
-                expected_sha256 = (
-                    "8bae1ae35b7327fa7c3a8f3ae495b81a071847d560837de2025e1554364001a5"
-                )
-
-            if expected_sha256:
-                if self.check_sha256(file_path, expected_sha256):
+            sakura = next(s for s in SAKURA_LIST if s.filename == downloaded_file)
+            if sakura:
+                if sakura.check_sha256(file_path):
                     self.main_window.createSuccessInfoBar(
                         "校验成功", "文件SHA256校验通过。"
                     )
@@ -436,13 +424,6 @@ class DownloadSection(QFrame):
 
         # 不要删除标志，以防止重复处理
         # delattr(self, '_download_processed')
-
-    def check_sha256(self, filename, expected_sha256):
-        sha256_hash = sha256()
-        with open(filename, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest() == expected_sha256
 
     def on_download_error(self, error_message):
         self.main_window.log_info(f"Download error: {error_message}")

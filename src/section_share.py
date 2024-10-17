@@ -4,7 +4,17 @@ import subprocess
 import requests
 import re
 import time
-from PySide6.QtCore import Qt, Signal, Slot, QThread, QThreadPool, QRunnable, QTimer, QMetaObject, QObject
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+    Slot,
+    QThread,
+    QThreadPool,
+    QRunnable,
+    QTimer,
+    QMetaObject,
+    QObject,
+)
 from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
@@ -51,6 +61,7 @@ class SlotsRefreshWorker(QRunnable):
             status = f"在线slot数量: 获取失败 - {str(e)}"
         self.callback(status)
 
+
 class RankingRefreshWorker(QRunnable):
     class Signals(QObject):
         result = Signal(object)
@@ -70,6 +81,7 @@ class RankingRefreshWorker(QRunnable):
                 self.signals.result.emit({"error": "数据格式错误"})
         except Exception as e:
             self.signals.result.emit({"error": f"获取失败 - {str(e)}"})
+
 
 class CFShareWorker(QThread):
     tunnel_url_found = Signal(str)
@@ -189,25 +201,25 @@ class CFShareSection(QFrame):
         self.worker = None
 
     def _init_ui(self):
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout()
 
         # 创建标签页切换控件
-        self.pivot = SegmentedWidget(self)
-        self.stacked_widget = QStackedWidget(self)
-        
+        self.pivot = SegmentedWidget()
+        self.stacked_widget = QStackedWidget()
+
         # 创建不同的页面
-        self.share_page = QWidget(self)
-        self.metrics_page = QWidget(self)
-        self.ranking_page = QWidget(self)
-        
+        self.share_page = QWidget()
+        self.metrics_page = QWidget()
+        self.ranking_page = QWidget()
+
         self.init_share_page()
         self.init_metrics_page()
         self.init_ranking_page()
-        
+
         self.add_sub_interface(self.share_page, "share_page", "共享设置")
         self.add_sub_interface(self.metrics_page, "metrics_page", "本地数据统计")
         self.add_sub_interface(self.ranking_page, "ranking_page", "在线排名")
-        
+
         layout.addWidget(self.pivot)
         layout.addWidget(self.stacked_widget)
 
@@ -224,49 +236,35 @@ class CFShareSection(QFrame):
 
     def init_share_page(self):
         layout = QVBoxLayout(self.share_page)
+        layout.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
 
-        buttons_group = QGroupBox("")
-        buttons_layout = QHBoxLayout()
+        self.refresh_slots_button = PushButton(FIF.SYNC, "刷新在线数量")
+        self.refresh_slots_button.clicked.connect(self.refresh_slots)
 
-        self.start_button = PrimaryPushButton(FIF.PLAY, "上线", self)
-        self.start_button.clicked.connect(self.start_cf_share)
-        self.start_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.start_button)
+        self.save_button = PushButton(FIF.SAVE, "保存")
+        self.save_button.clicked.connect(self.save_settings)
 
-        self.stop_button = PushButton(FIF.CLOSE, "下线", self)
+        self.stop_button = PushButton(FIF.CLOSE, "下线")
         self.stop_button.clicked.connect(self.stop_cf_share)
         self.stop_button.setEnabled(False)
-        self.stop_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.stop_button)
 
-        self.save_button = PushButton(FIF.SAVE, "保存", self)
-        self.save_button.clicked.connect(self.save_settings)
-        self.save_button.setFixedSize(110, 30)
-        buttons_layout.addWidget(self.save_button)
+        self.start_button = PrimaryPushButton(FIF.PLAY, "上线")
+        self.start_button.clicked.connect(self.start_cf_share)
 
-        self.refresh_slots_button = PushButton(FIF.SYNC, "刷新在线数量", self)
-        self.refresh_slots_button.clicked.connect(self.refresh_slots)
-        self.refresh_slots_button.setFixedSize(150, 30)
-        buttons_layout.addWidget(self.refresh_slots_button)
-
-        buttons_layout.setAlignment(Qt.AlignRight)
-        buttons_group.setStyleSheet(
-            """ QGroupBox {border: 0px solid darkgray; background-color: #202020; border-radius: 8px;}"""
+        layout.addWidget(
+            UiButtonGroup(
+                self.refresh_slots_button,
+                self.save_button,
+                self.stop_button,
+                self.start_button,
+            )
         )
-        buttons_group.setLayout(buttons_layout)
-        layout.addWidget(buttons_group)
 
-        layout.addWidget(QLabel("WORKER_URL:"))
-        self.worker_url_input = UiLineEdit(
-            self, "输入WORKER_URL", "https://sakura-share.one"
-        )
-        layout.addWidget(self.worker_url_input)
+        self.worker_url_input = UiLineEdit("输入WORKER_URL", "https://sakura-share.one")
+        layout.addLayout(UiOptionRow("链接", self.worker_url_input))
 
-        layout.addWidget(QLabel("Token:"))
-        self.tg_token_input = UiLineEdit(
-            self, "输入从@SakuraShareBot获取的token，用于统计贡献(可选)", ""
-        )
-        layout.addWidget(self.tg_token_input)
+        self.tg_token_input = UiLineEdit("可选，从@SakuraShareBot获取，用于统计贡献")
+        layout.addLayout(UiOptionRow("令牌", self.tg_token_input))
 
         self.status_label = QLabel("状态: 未运行")
         layout.addWidget(self.status_label)
@@ -334,13 +332,14 @@ class CFShareSection(QFrame):
 
     def init_metrics_page(self):
         layout = QVBoxLayout(self.metrics_page)
-        
+        layout.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
+
         self.metrics_table = TableWidget(self)
         self.metrics_table.setColumnCount(2)
         self.metrics_table.setHorizontalHeaderLabels(["指标", "值"])
         self.metrics_table.verticalHeader().setVisible(False)
         self.metrics_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        
+
         metrics_data = [
             ("提示词 tokens 总数", "暂无数据"),
             ("提示词处理总时间", "暂无数据"),
@@ -355,14 +354,14 @@ class CFShareSection(QFrame):
             ("正在处理的请求数", "暂无数据"),
             ("延迟的请求数", "暂无数据"),
         ]
-        
+
         self.metrics_table.setRowCount(len(metrics_data))
         for row, (metric, value) in enumerate(metrics_data):
             self.metrics_table.setItem(row, 0, QTableWidgetItem(metric))
             self.metrics_table.setItem(row, 1, QTableWidgetItem(value))
-        
+
         layout.addWidget(self.metrics_table)
-        
+
         tooltips = {
             "提示词 tokens 总数": "已处理的提示词 tokens 总数",
             "提示词处理总时间": "提示词处理的总时间",
@@ -377,7 +376,7 @@ class CFShareSection(QFrame):
             "正在处理的请求数": "当前正在处理的请求数",
             "延迟的请求数": "被延迟的请求数",
         }
-        
+
         for row in range(self.metrics_table.rowCount()):
             metric_item = self.metrics_table.item(row, 0)
             if metric_item:
@@ -385,14 +384,15 @@ class CFShareSection(QFrame):
 
     def init_ranking_page(self):
         layout = QVBoxLayout(self.ranking_page)
-        
+        layout.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
+
         self.ranking_table = TableWidget(self)
         self.ranking_table.setColumnCount(2)
         self.ranking_table.setHorizontalHeaderLabels(["用户名", "计数"])
         self.ranking_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        
+
         layout.addWidget(self.ranking_table)
-        
+
         self.refresh_ranking_button = PushButton(FIF.SYNC, "刷新排名", self)
         self.refresh_ranking_button.clicked.connect(self.refresh_ranking)
         layout.addWidget(self.refresh_ranking_button)
@@ -467,7 +467,10 @@ class CFShareSection(QFrame):
                     value = metrics[key]
                     if key in ["prompt_tokens_total", "tokens_predicted_total"]:
                         value_item.setText(f"{value:.0f} tokens")
-                    elif key in ["prompt_seconds_total", "tokens_predicted_seconds_total"]:
+                    elif key in [
+                        "prompt_seconds_total",
+                        "tokens_predicted_seconds_total",
+                    ]:
                         value_item.setText(f"{value:.2f} 秒")
                     elif key == "n_decode_total":
                         value_item.setText(f"{value:.0f} 次")
@@ -526,17 +529,16 @@ class CFShareSection(QFrame):
             settings.get("worker_url", "https://sakura-share.one")
         )
 
-
     @Slot()
     def refresh_slots(self):
         worker_url = self.worker_url_input.text().strip()
         if not worker_url:
             self.slots_status_label.setText("在线slot数量: 获取失败 - WORKER_URL为空")
             return
-        
+
         self.refresh_slots_button.setEnabled(False)
         self.slots_status_label.setText("在线slot数量: 正在获取...")
-        
+
         worker = SlotsRefreshWorker(worker_url, self.update_slots_status)
         QThreadPool.globalInstance().start(worker)
 
@@ -551,9 +553,9 @@ class CFShareSection(QFrame):
         if not worker_url:
             MessageBox("错误", "请输入WORKER_URL", self).exec_()
             return
-        
+
         self.refresh_ranking_button.setEnabled(False)
-        
+
         worker = RankingRefreshWorker(worker_url)
         worker.signals.result.connect(self.update_ranking)
         QThreadPool.globalInstance().start(worker)
@@ -564,12 +566,14 @@ class CFShareSection(QFrame):
             MessageBox("错误", f"获取排名失败: {ranking_data['error']}", self).exec_()
         else:
             self.ranking_table.setRowCount(0)
-            for username, count in sorted(ranking_data.items(), key=lambda item: int(item[1]), reverse=True):
+            for username, count in sorted(
+                ranking_data.items(), key=lambda item: int(item[1]), reverse=True
+            ):
                 row = self.ranking_table.rowCount()
                 self.ranking_table.insertRow(row)
                 self.ranking_table.setItem(row, 0, QTableWidgetItem(username))
                 self.ranking_table.setItem(row, 1, QTableWidgetItem(str(count)))
-        
+
         self.refresh_ranking_button.setEnabled(True)
 
     def check_local_health_status(self):
@@ -593,7 +597,7 @@ class CFShareSection(QFrame):
         try:
             json_data = {
                 "url": self.tunnel_url,
-                "tg_token": self.tg_token_input.text().strip() or None
+                "tg_token": self.tg_token_input.text().strip() or None,
             }
             json_data = {k: v for k, v in json_data.items() if v is not None}
 
@@ -616,7 +620,7 @@ class CFShareSection(QFrame):
             self.main_window.log_info(f"Offline Response: {offline_response.text}")
         except Exception as e:
             self.main_window.log_info(f"Error taking node offline: {str(e)}")
-    
+
     def __del__(self):
         if self.worker:
             self.worker.stop()

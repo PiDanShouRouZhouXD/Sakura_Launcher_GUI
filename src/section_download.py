@@ -293,7 +293,7 @@ class DownloadSection(QFrame):
 
         layout = QVBoxLayout(self.llamacpp_download_section)
         layout.addWidget(description)
-        layout.addWidget(UiHLine(self))
+        layout.addWidget(UiHLine())
         layout.addLayout(comboBox)
         layout.addLayout(cudart_button)
         layout.addWidget(self.llamacpp_table)

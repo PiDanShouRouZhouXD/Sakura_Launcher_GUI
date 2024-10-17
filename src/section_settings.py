@@ -31,7 +31,6 @@ class SettingsSection(QFrame):
         layout = QVBoxLayout()
 
         self.llamacpp_path = UiLineEdit(
-            self,
             "llama.cpp二进制文件所在的路径（可选），留空则为当前目录下的llama文件夹",
             "",
         )
@@ -65,7 +64,6 @@ class SettingsSection(QFrame):
         self.load_settings_button = PushButton(FIF.SYNC, "加载设置", self)
         self.load_settings_button.clicked.connect(self.load_settings)
         layout.addWidget(self.load_settings_button)
-
 
         self.setLayout(layout)
 

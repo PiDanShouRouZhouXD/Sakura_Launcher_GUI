@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QFrame, QLayout
 from qfluentwidgets import (
     CheckBox,
+    ComboBox,
     FluentStyleSheet,
     LineEdit,
     Slider,
@@ -140,9 +141,16 @@ def UiSlider(
 
 
 def UiEditableComboBox(items):
-    combo_box = EditableComboBox()
-    combo_box.addItems(items)
-    return combo_box
+    w = EditableComboBox()
+    w.addItems(items)
+    return w
+
+
+def UiComboBox(items, on_change):
+    w = ComboBox()
+    w.addItems(items)
+    w.currentTextChanged.connect(on_change)
+    return w
 
 
 Child = QWidget | QLayout | None

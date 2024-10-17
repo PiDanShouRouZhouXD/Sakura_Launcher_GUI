@@ -3,7 +3,6 @@ import json
 import subprocess
 import requests
 import re
-import time
 from PySide6.QtCore import (
     Qt,
     Signal,
@@ -17,9 +16,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QVBoxLayout,
-    QHBoxLayout,
     QLabel,
-    QGroupBox,
     QSpacerItem,
     QSizePolicy,
     QTableWidgetItem,
@@ -201,11 +198,9 @@ class CFShareSection(QFrame):
         self.worker = None
 
     def _init_ui(self):
-        layout = QVBoxLayout()
-
         # 创建标签页切换控件
-        self.pivot = SegmentedWidget()
-        self.stacked_widget = QStackedWidget()
+        pivot = SegmentedWidget()
+        stacked_widget = QStackedWidget()
 
         # 创建不同的页面
         self.share_page = QWidget()
@@ -216,22 +211,26 @@ class CFShareSection(QFrame):
         self.init_metrics_page()
         self.init_ranking_page()
 
-        self.add_sub_interface(self.share_page, "share_page", "共享设置")
-        self.add_sub_interface(self.metrics_page, "metrics_page", "本地数据统计")
-        self.add_sub_interface(self.ranking_page, "ranking_page", "在线排名")
+        def add_sub_interface(widget: QWidget, object_name, text):
+            widget.setObjectName(object_name)
+            stacked_widget.addWidget(widget)
+            pivot.addItem(
+                routeKey=object_name,
+                text=text,
+                onClick=lambda: stacked_widget.setCurrentWidget(widget),
+            )
 
-        layout.addWidget(self.pivot)
-        layout.addWidget(self.stacked_widget)
+        add_sub_interface(self.share_page, "share_page", "共享设置")
+        add_sub_interface(self.metrics_page, "metrics_page", "本地数据统计")
+        add_sub_interface(self.ranking_page, "ranking_page", "在线排名")
 
-        self.setLayout(layout)
+        pivot.setCurrentItem(stacked_widget.currentWidget().objectName())
 
-    def add_sub_interface(self, widget: QWidget, object_name, text):
-        widget.setObjectName(object_name)
-        self.stacked_widget.addWidget(widget)
-        self.pivot.addItem(
-            routeKey=object_name,
-            text=text,
-            onClick=lambda: self.stacked_widget.setCurrentWidget(widget),
+        self.setLayout(
+            UiCol(
+                pivot,
+                stacked_widget,
+            )
         )
 
     def init_share_page(self):

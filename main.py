@@ -41,6 +41,7 @@ class MainWindow(MSFluentWindow):
             MessageBox(
                 "错误", f"cloudflared 可执行文件不存在: {cloudflared_path}", self
             ).exec()
+        self.setMinimumSize(600, 740)
         self.load_window_state()
 
         # 黑魔法，强行覆盖函数以关闭标签页切换动画
@@ -113,7 +114,6 @@ class MainWindow(MSFluentWindow):
         icon = get_resource_path(ICON_FILE)
         self.setWindowIcon(QIcon(icon))
         self.setWindowTitle(f"Sakura 启动器 v{SAKURA_LAUNCHER_GUI_VERSION}")
-        self.resize(600, 400)
 
         desktop = QApplication.screens()[0].availableGeometry()
         w, h = desktop.width(), desktop.height()

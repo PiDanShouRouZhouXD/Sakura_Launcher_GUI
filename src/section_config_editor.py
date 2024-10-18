@@ -37,7 +37,6 @@ class ConfigEditor(QFrame):
             }
         """
         )
-        self.resize(400, 400)
         self.init_ui()
         self.load_settings()
 

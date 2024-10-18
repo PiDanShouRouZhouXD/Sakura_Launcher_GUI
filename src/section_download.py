@@ -40,7 +40,7 @@ def UiDescription(html):
     description.setTextFormat(Qt.RichText)
     description.setWordWrap(True)
     description.setOpenExternalLinks(True)
-    description.setMargin(16)
+    description.setMargin(4)
     description.setTextInteractionFlags(
         Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse
     )
@@ -286,24 +286,21 @@ class DownloadSection(QFrame):
 
         description = UiDescription(
             """
-        <p>下载的llama.cpp会解压到启动器所在的目录，如果存在旧版本，会自动覆盖。你也可以手动从<a href="https://github.com/ggerganov/llama.cpp/releases">GitHub发布页面</a>下载发行版。</p>
-        <p><b>ROCm支持的AMD独显型号(感谢Sora维护)</b>
+        <p>
+        下载的llama.cpp会解压到启动器所在的目录，如果存在旧版本，会自动覆盖。你也可以手动从<a href="https://github.com/ggerganov/llama.cpp/releases">GitHub发布页面</a>下载发行版。
+        intel ARC用户请参考<a href="https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md">这篇文档</a>来手动安装，在启动器指定软链接路径<b>可能</b>可以使用。
+        Vulkan版本现在还不支持IQ系列的量化。
+        </p>
+        <p><b>ROCm支持的AMD独显型号(感谢Sora维护)</b></p>
         <ul>
             <li>RX 7900 / 7800 / 7700系列显卡</li>
             <li>RX 6900 / 6800 / 6700系列显卡</li>
         </ul>
-        </p>
-        <p><b>ROCm-780m支持的AMD核显型号</b>
+        <p><b>ROCm-780m支持的AMD核显型号</b></p>
         <ul>
             <li>7840hs / 7940hs / 8840hs / 8845hs </li>
             <li>理论上支持任何2022年后的AMD GPU，但要求CPU支持AVX512，且不对任何非780m显卡的可用性负责</li>
         </ul>
-        </p>
-        <p><b>注意：</b></p>
-        <ul>
-            <li>Vulkan版本现在还不支持IQ系列的量化。</li>
-            <li>intel ARC用户可以参考<a href="https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md">这篇文档</a>来手动安装llamacpp，在启动器指定软链接路径<b>可能</b>可以正常使用。
-        </ur>
         """
         )
 

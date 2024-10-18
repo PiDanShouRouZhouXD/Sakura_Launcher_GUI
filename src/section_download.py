@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from enum import Enum
 import logging
 import os
 import requests
@@ -19,9 +21,10 @@ from qfluentwidgets import (
     TransparentPushButton,
     SegmentedWidget,
     ProgressBar,
+    InfoBar,
 )
 
-from .common import CURRENT_DIR, get_self_path
+from .common import CURRENT_DIR
 from .llamacpp import (
     LLAMACPP_CUDART,
     LLAMACPP_DOWNLOAD_SRC,
@@ -83,10 +86,24 @@ class RefreshLatestThread(QThread):
             logging.error(f"获取最新CUDA版本时出错: {str(e)}")
 
 
+class DownloadTaskState(Enum):
+    RUNNING = 1
+    SUCCESS = 2
+    ERROR = 3
+
+
+@dataclass
+class DownloadTask:
+    name: str
+    url: str
+    filename: str
+    state: DownloadTaskState = DownloadTaskState.RUNNING
+
+
 class DownloadThread(QThread):
-    progress = Signal(int)
-    finished = Signal()
-    error = Signal(str)
+    sig_progress = Signal(int)
+    sig_success = Signal()
+    sig_error = Signal(str)
 
     def __init__(self, url, filename):
         super().__init__()
@@ -96,7 +113,7 @@ class DownloadThread(QThread):
 
     def run(self):
         try:
-            logging.info(f"开始下载: {self.filename}")
+            logging.info(f"开始下载: {self.url} => {self.filename}")
             response = requests.get(self.url, stream=True)
             response.raise_for_status()
 
@@ -104,47 +121,47 @@ class DownloadThread(QThread):
             block_size = 1024  # 1 KB
             downloaded_size = 0
 
-            file_path = os.path.join(get_self_path(), self.filename)
+            file_path = os.path.join(CURRENT_DIR, self.filename)
             with open(file_path, "wb") as file:
                 for data in response.iter_content(block_size):
                     size = file.write(data)
                     downloaded_size += size
                     if total_size > 0:
                         progress = int((downloaded_size / total_size) * 100)
-                        self.progress.emit(progress)
+                        self.sig_progress.emit(progress)
 
             logging.info(f"下载完成: {self.filename}")
 
             if not self._is_finished:
                 self._is_finished = True
-                self.finished.emit()
+                self.sig_success.emit()
         except requests.RequestException as e:
             error_msg = f"下载出错: {str(e)}"
             logging.info(error_msg)
-            self.error.emit(error_msg)
+            self.sig_error.emit(error_msg)
         except IOError as e:
             error_msg = f"文件写入错误: {str(e)}"
             logging.info(error_msg)
-            self.error.emit(error_msg)
+            self.sig_error.emit(error_msg)
         except Exception as e:
             error_msg = f"未知错误: {str(e)}"
             logging.info(error_msg)
-            self.error.emit(error_msg)
+            self.sig_error.emit(error_msg)
 
     def safe_disconnect(self):
         logging.info("正在断开下载线程的所有信号连接")
         try:
-            self.progress.disconnect()
+            self.sig_progress.disconnect()
             logging.info("断开 progress 信号")
         except TypeError:
             pass
         try:
-            self.finished.disconnect()
+            self.sig_success.disconnect()
             logging.info("断开 finished 信号")
         except TypeError:
             pass
         try:
-            self.error.disconnect()
+            self.sig_error.disconnect()
             logging.info("断开 error 信号")
         except TypeError:
             pass
@@ -161,10 +178,11 @@ class DownloadThread(QThread):
 class DownloadSection(QFrame):
     llamacpp_download_src = "GHProxy"
     sakura_download_src = "HFMirror"
+    download_tasks: List[DownloadTask] = []
+    download_threads: List[QThread] = []
 
-    def __init__(self, title, main_window, parent=None):
-        super().__init__(parent)
-        self.main_window = main_window
+    def __init__(self, title):
+        super().__init__()
         self.setObjectName(title.replace(" ", "-"))
         self.init_ui()
 
@@ -184,12 +202,17 @@ class DownloadSection(QFrame):
         add_sub_interface(
             self._create_sakura_download_section(),
             "model_download_section",
-            "模型下载",
+            "Sakura模型下载",
         )
         add_sub_interface(
             self._create_llamacpp_download_section(),
             "llamacpp_download_section",
             "llama.cpp下载",
+        )
+        add_sub_interface(
+            self._create_download_progress_section(),
+            "download_progress_section",
+            "下载进度",
         )
 
         pivot.setCurrentItem(stacked_widget.currentWidget().objectName())
@@ -284,16 +307,6 @@ class DownloadSection(QFrame):
         )
         on_src_change(LLAMACPP_DOWNLOAD_SRC[0])
 
-        def create_cudart_button():
-            download_fn = lambda: self.start_download_cudart()
-            button = UiDownloadButton(download_fn)
-            layout = QHBoxLayout()
-            layout.addWidget(QLabel("下载CUDA"))
-            layout.addWidget(button)
-            return layout
-
-        cudart_button = create_cudart_button()
-
         description = UiDescription(
             """
         <p>
@@ -320,112 +333,157 @@ class DownloadSection(QFrame):
                 description,
                 UiHLine(),
                 comboBox,
-                cudart_button,
                 self.llamacpp_table,
             )
         )
         return section
 
+    def _create_download_progress_section(self):
+        self.download_progress_layout = UiCol()
+        self.download_progress_layout.addStretch()
+        section = QWidget()
+        section.setLayout(self.download_progress_layout)
+        return section
+
+    def _start_download_task(self, new_task: DownloadTask, on_finish):
+        for task in self.download_tasks:
+            if task.state == DownloadTaskState.RUNNING and task.name == new_task.name:
+                InfoBar.warning(
+                    title=f"{new_task.filename}已在下载中",
+                    content="",
+                    parent=self,
+                )
+                return
+
+        self.download_tasks.append(new_task)
+
+        progress_bar = ProgressBar()
+        self.download_progress_layout.insertLayout(
+            0,
+            UiCol(
+                QLabel(f"<b>{new_task.name}</b>"),
+                QLabel(new_task.filename),
+                progress_bar,
+            ),
+        )
+
+        def on_error(error_message):
+            new_task.state = DownloadTaskState.ERROR
+            logging.error(f"下载失败 {error_message}")
+            QApplication.processEvents()  # 确保UI更新
+            InfoBar.error(
+                title=f"{new_task.name}下载失败",
+                content=f"{error_message}",
+                parent=self,
+            )
+
+        thread = DownloadThread(new_task.url, new_task.filename)
+        thread.sig_progress.connect(progress_bar.setValue)
+        thread.sig_success.connect(on_finish)
+        thread.sig_error.connect(on_error)
+        thread.start()
+
+        self.download_threads.append(thread)
+
+        logging.info(f"开始下载: URL={new_task.url}, 文件名={new_task.filename}")
+        InfoBar.success(
+            title=f"{new_task.name}开始下载",
+            content="",
+            parent=self,
+        )
+
     def start_download_sakura(self, sakura: Sakura):
         src = self.sakura_download_src
-        url = sakura.download_links[src]
-        self.start_download(url, sakura.filename)
+        task = DownloadTask(
+            name="Sakura模型",
+            url=sakura.download_links[src],
+            filename=sakura.filename,
+        )
+
+        def on_download_sakura_finish():
+            file_path = os.path.join(CURRENT_DIR, task.filename)
+            if sakura.check_sha256(file_path):
+                task.state = DownloadTaskState.SUCCESS
+                InfoBar.success(
+                    title=f"{task.name}下载成功",
+                    content="",
+                    parent=self,
+                )
+            else:
+                task.state = DownloadTaskState.ERROR
+                InfoBar.error(
+                    title=f"{task.name}校验失败",
+                    content="",
+                    parent=self,
+                )
+                os.remove(file_path)  # 删除校验失败的文件
+
+        self._start_download_task(task, on_finish=on_download_sakura_finish)
 
     def start_download_cudart(self):
+        src = self.llamacpp_download_src
         cudart = LLAMACPP_CUDART
-        src = self.llamacpp_download_src
-        url = cudart["download_links"][src]
-        self.start_download(url, cudart["filename"])
-
-    def start_download_llamacpp(self, llamacpp: Llamacpp):
-        src = self.llamacpp_download_src
-        url = llamacpp.download_links[src]
-        if url:
-            self.start_download(url, llamacpp.filename)
-        else:
-            logging.info(f"当前下载源不支持该llamacpp版本，请换其他源")
-
-    # 直接使用requests下载
-    def start_download(self, url, filename):
-        logging.info(f"开始下载: URL={url}, 文件名={filename}")
-
-        # 重置下载状态
-        if hasattr(self, "_download_processed"):
-            delattr(self, "_download_processed")
-
-        # 确保旧的下载线程已经停止并且信号已经断开
-        if hasattr(self, "download_thread"):
-            self.download_thread.safe_disconnect()
-            self.download_thread.wait()  # 等待线程完全停止
-
-        self.download_thread = DownloadThread(url, filename)
-
-        # 连接信号，使用 Qt.UniqueConnection 确保只连接一次
-        self.download_thread.progress.connect(
-            self.global_progress_bar.setValue, Qt.UniqueConnection
-        )
-        self.download_thread.finished.connect(
-            self.on_download_finished, Qt.UniqueConnection
-        )
-        self.download_thread.error.connect(self.on_download_error, Qt.UniqueConnection)
-
-        self.download_thread.start()
-        self.main_window.createSuccessInfoBar(
-            "下载中", "文件正在下载，请耐心等待，下载进度请关注最下方的进度条。"
+        task = DownloadTask(
+            name="CUDA-RT",
+            url=cudart["download_links"][src],
+            filename=cudart["filename"],
         )
 
-    def on_download_finished(self):
-        if hasattr(self, "_download_processed") and self._download_processed:
-            logging.info("下载已经处理过，跳过重复处理")
-            return
-
-        self._download_processed = True
-        logging.info("开始处理下载完成的文件")
-        self.main_window.createSuccessInfoBar("下载完成", "文件已成功下载")
-        # 获取下载的文件名
-        downloaded_file = self.download_thread.filename
-        file_path = os.path.join(CURRENT_DIR, downloaded_file)
-
-        # 检查文件是否存在
-        if not os.path.exists(file_path):
-            logging.info(f"错误：文件 {file_path} 不存在")
-            return
-
-        # 检查是否为llama.cpp文件
-        if downloaded_file.startswith("llama"):
+        def on_download_cudart_finish():
+            file_path = os.path.join(CURRENT_DIR, task.filename)
             try:
-                unzip_llamacpp(CURRENT_DIR, downloaded_file)
-                self.main_window.createSuccessInfoBar(
-                    "解压完成", "已经将llama.cpp解压到程序所在目录的llama文件夹内。"
+                task.state = DownloadTaskState.SUCCESS
+                unzip_llamacpp(CURRENT_DIR, task.filename)
+                InfoBar.success(
+                    title=f"{task.name}下载成功",
+                    content="",
+                    parent=self,
                 )
             except Exception as e:
-                logging.info(f"解压文件时出错: {str(e)}")
+                task.state = DownloadTaskState.ERROR
+                InfoBar.error(
+                    title=f"{task.name}解压失败",
+                    content=str(e),
+                    parent=self,
+                )
             finally:
                 # 无论解压是否成功，都删除原始zip文件
                 if os.path.exists(file_path):
                     os.remove(file_path)
-        else:
-            # 对模型文件进行SHA256校验
-            sakura = next(s for s in SAKURA_LIST if s.filename == downloaded_file)
-            if sakura:
-                if sakura.check_sha256(file_path):
-                    self.main_window.createSuccessInfoBar(
-                        "校验成功", "文件SHA256校验通过。"
-                    )
-                else:
-                    self.main_window.createWarningInfoBar(
-                        "校验失败", "文件SHA256校验未通过，请重新下载。"
-                    )
-                    os.remove(file_path)  # 删除校验失败的文件
-            else:
-                self.main_window.createWarningInfoBar(
-                    "未校验", "无法为此文件执行SHA256校验。"
+
+        self._start_download_task(task, on_finish=on_download_cudart_finish)
+
+    def start_download_llamacpp(self, llamacpp: Llamacpp):
+        src = self.llamacpp_download_src
+        task = DownloadTask(
+            name="Llamacpp",
+            url=llamacpp.download_links[src],
+            filename=llamacpp.filename,
+        )
+
+        def on_download_llamacpp_finish():
+            file_path = os.path.join(CURRENT_DIR, task.filename)
+            try:
+                task.state = DownloadTaskState.SUCCESS
+                unzip_llamacpp(CURRENT_DIR, task.filename)
+                InfoBar.success(
+                    title=f"{task.name}下载成功",
+                    content="",
+                    parent=self,
                 )
+            except Exception as e:
+                task.state = DownloadTaskState.ERROR
+                InfoBar.error(
+                    title=f"{task.name}解压失败",
+                    content=str(e),
+                    parent=self,
+                )
+            finally:
+                # 无论解压是否成功，都删除原始zip文件
+                if os.path.exists(file_path):
+                    os.remove(file_path)
 
-        # 不要删除标志，以防止重复处理
-        # delattr(self, '_download_processed')
+        self._start_download_task(task, on_finish=on_download_llamacpp_finish)
 
-    def on_download_error(self, error_message):
-        logging.info(f"Download error: {error_message}")
-        QApplication.processEvents()  # 确保UI更新
-        MessageBox("错误", f"下载失败: {error_message}", self).exec()
+        if llamacpp.require_cuda:
+            self.start_download_cudart()

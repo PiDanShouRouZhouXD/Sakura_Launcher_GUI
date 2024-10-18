@@ -225,8 +225,6 @@ class MainWindow(MSFluentWindow):
                 command += f" -c {section.context_length_input.value()}"
                 command += f" -a {model_name}"
                 command += f" --host {section.host_input.currentText()} --port {section.port_input.text()}"
-                if section.log_format_combo.currentText() not in ("none", ""):
-                    command += f" --log-format {section.log_format_combo.currentText()}"
                 command += f" -np {section.n_parallel_spinbox.value()}"
 
                 if section.flash_attention_check.isChecked():

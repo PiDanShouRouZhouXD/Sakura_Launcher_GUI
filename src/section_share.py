@@ -256,6 +256,11 @@ class CFShareSection(QFrame):
         self.metrics_timer.timeout.connect(self.refresh_metrics)
         self.metrics_timer.setInterval(5000)  # 5秒更新一次
 
+        # 添加新的重新注册定时器
+        self.reregister_timer = QTimer(self)
+        self.reregister_timer.timeout.connect(self.reregister_node)
+        self.reregister_timer.setInterval(60000)  # 60秒 (1分钟) 重新注册一次
+
     def _init_ui(self):
         # 创建标签页切换控件
         pivot = SegmentedWidget()
@@ -499,11 +504,13 @@ class CFShareSection(QFrame):
 
         # 在主线程中启动定时器
         QMetaObject.invokeMethod(self.metrics_timer, "start", Qt.QueuedConnection)
+        QMetaObject.invokeMethod(self.reregister_timer, "start", Qt.QueuedConnection)
 
     @Slot()
     def stop_cf_share(self):
         # 在主线程中停止定时器
         QMetaObject.invokeMethod(self.metrics_timer, "stop", Qt.QueuedConnection)
+        QMetaObject.invokeMethod(self.reregister_timer, "stop", Qt.QueuedConnection)
         un_register_status = self.take_node_offline()
         if self.worker:
             self.worker.stop()
@@ -687,10 +694,10 @@ class CFShareSection(QFrame):
             if data["status"] in ["ok", "no slot available"]:
                 return True
             else:
-                logging.info(f"Local health status: Not healthy - {data['status']}")
+                logging.info(f"本地服务状态: 不健康 - {data['status']}")
                 return False
         except Exception as e:
-            logging.info(f"Error checking local health status: {str(e)}")
+            logging.info(f"检查本地服务状态失败: {str(e)}")
             return False
 
     def register_node(self):
@@ -706,13 +713,13 @@ class CFShareSection(QFrame):
                 json=json_data,
                 headers={"Content-Type": "application/json"},
             )
-            logging.info(f"API Response: {api_response.text}")
+            logging.info(f"节点注册响应: {api_response.text}")
             if api_response.status_code == 200:
                 return True
             else:
                 return False
         except Exception as e:
-            logging.info(f"Error registering node: {str(e)}")
+            logging.info(f"节点注册失败: {str(e)}")
             return False
 
     def take_node_offline(self):
@@ -722,13 +729,34 @@ class CFShareSection(QFrame):
                 json={"url": self.tunnel_url},
                 headers={"Content-Type": "application/json"},
             )
-            logging.info(f"Offline Response: {offline_response.text}")
+            logging.info(f"节点下线响应: {offline_response.text}")
             return True
         except Exception as e:
-            logging.info(f"Error taking node offline: {str(e)}")
-            return False
+            if "object has no attribute 'worker_url'" in str(e):
+                logging.info("节点已下线")
+                return True
+            else:
+                logging.info(f"节点下线失败：{str(e)}")
+                return False
 
     def __del__(self):
         if self.worker:
             self.worker.stop()
             self.worker.wait()
+
+    @Slot()
+    def reregister_node(self):
+        if self.check_local_health_status():
+            worker = NodeRegistrationWorker(self, self.tunnel_url)
+            worker.signals.status_update.connect(self.update_status)
+            worker.signals.finished.connect(self.on_reregistration_finished)
+            QThreadPool.globalInstance().start(worker)
+        else:
+            logging.info("本地健康检查未通过,跳过重新注册")
+
+    @Slot(bool, str)
+    def on_reregistration_finished(self, success, status):
+        if success:
+            logging.info("节点重新注册成功")
+        else:
+            logging.warning(f"节点重新注册失败: {status}")

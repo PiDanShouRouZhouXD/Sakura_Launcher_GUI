@@ -1,9 +1,9 @@
+import logging
 import os
 import requests
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import (
     QApplication,
-    QVBoxLayout,
     QLabel,
     QFrame,
     QHeaderView,
@@ -77,16 +77,15 @@ class DownloadThread(QThread):
     finished = Signal()
     error = Signal(str)
 
-    def __init__(self, url, filename, main_window):
+    def __init__(self, url, filename):
         super().__init__()
         self.url = url
         self.filename = filename
-        self.main_window = main_window
         self._is_finished = False
 
     def run(self):
         try:
-            self.main_window.log_info(f"开始下载: {self.filename}")
+            logging.info(f"开始下载: {self.filename}")
             response = requests.get(self.url, stream=True)
             response.raise_for_status()
 
@@ -103,49 +102,49 @@ class DownloadThread(QThread):
                         progress = int((downloaded_size / total_size) * 100)
                         self.progress.emit(progress)
 
-            self.main_window.log_info(f"下载完成: {self.filename}")
+            logging.info(f"下载完成: {self.filename}")
 
             if not self._is_finished:
                 self._is_finished = True
                 self.finished.emit()
         except requests.RequestException as e:
             error_msg = f"下载出错: {str(e)}"
-            self.main_window.log_info(error_msg)
+            logging.info(error_msg)
             self.error.emit(error_msg)
         except IOError as e:
             error_msg = f"文件写入错误: {str(e)}"
-            self.main_window.log_info(error_msg)
+            logging.info(error_msg)
             self.error.emit(error_msg)
         except Exception as e:
             error_msg = f"未知错误: {str(e)}"
-            self.main_window.log_info(error_msg)
+            logging.info(error_msg)
             self.error.emit(error_msg)
 
     def safe_disconnect(self):
-        self.main_window.log_info("正在断开下载线程的所有信号连接")
+        logging.info("正在断开下载线程的所有信号连接")
         try:
             self.progress.disconnect()
-            self.main_window.log_info("断开 progress 信号")
+            logging.info("断开 progress 信号")
         except TypeError:
             pass
         try:
             self.finished.disconnect()
-            self.main_window.log_info("断开 finished 信号")
+            logging.info("断开 finished 信号")
         except TypeError:
             pass
         try:
             self.error.disconnect()
-            self.main_window.log_info("断开 error 信号")
+            logging.info("断开 error 信号")
         except TypeError:
             pass
-        self.main_window.log_info("下载线程的所有信号已断开")
+        logging.info("下载线程的所有信号已断开")
 
     def stop(self):
-        self.main_window.log_info("正在停止下载线程")
+        logging.info("正在停止下载线程")
         self.terminate()
         self.wait()
         self._is_finished = True
-        self.main_window.log_info("下载线程已停止")
+        logging.info("下载线程已停止")
 
 
 class DownloadSection(QFrame):
@@ -260,7 +259,7 @@ class DownloadSection(QFrame):
         try:
             get_latest_cuda_release()
         except Exception as e:
-            self.main_window.log_info(f"获取最新CUDA版本时出错: {str(e)}")
+            logging.info(f"获取最新CUDA版本时出错: {str(e)}")
 
         self.llamacpp_table = UiTable(["版本", "适合显卡", "下载"])
         self.refresh_llamacpp_table()
@@ -337,11 +336,11 @@ class DownloadSection(QFrame):
         if url:
             self.start_download(url, llamacpp.filename)
         else:
-            self.main_window.log_info(f"当前下载源不支持该llamacpp版本，请换其他源")
+            logging.info(f"当前下载源不支持该llamacpp版本，请换其他源")
 
     # 直接使用requests下载
     def start_download(self, url, filename):
-        self.main_window.log_info(f"开始下载: URL={url}, 文件名={filename}")
+        logging.info(f"开始下载: URL={url}, 文件名={filename}")
 
         # 重置下载状态
         if hasattr(self, "_download_processed"):
@@ -352,7 +351,7 @@ class DownloadSection(QFrame):
             self.download_thread.safe_disconnect()
             self.download_thread.wait()  # 等待线程完全停止
 
-        self.download_thread = DownloadThread(url, filename, self.main_window)
+        self.download_thread = DownloadThread(url, filename)
 
         # 连接信号，使用 Qt.UniqueConnection 确保只连接一次
         self.download_thread.progress.connect(
@@ -370,11 +369,11 @@ class DownloadSection(QFrame):
 
     def on_download_finished(self):
         if hasattr(self, "_download_processed") and self._download_processed:
-            self.main_window.log_info("下载已经处理过，跳过重复处理")
+            logging.info("下载已经处理过，跳过重复处理")
             return
 
         self._download_processed = True
-        self.main_window.log_info("开始处理下载完成的文件")
+        logging.info("开始处理下载完成的文件")
         self.main_window.createSuccessInfoBar("下载完成", "文件已成功下载")
         # 获取下载的文件名
         downloaded_file = self.download_thread.filename
@@ -382,7 +381,7 @@ class DownloadSection(QFrame):
 
         # 检查文件是否存在
         if not os.path.exists(file_path):
-            self.main_window.log_info(f"错误：文件 {file_path} 不存在")
+            logging.info(f"错误：文件 {file_path} 不存在")
             return
 
         # 检查是否为llama.cpp文件
@@ -393,7 +392,7 @@ class DownloadSection(QFrame):
                     "解压完成", "已经将llama.cpp解压到程序所在目录的llama文件夹内。"
                 )
             except Exception as e:
-                self.main_window.log_info(f"解压文件时出错: {str(e)}")
+                logging.info(f"解压文件时出错: {str(e)}")
             finally:
                 # 无论解压是否成功，都删除原始zip文件
                 if os.path.exists(file_path):
@@ -420,6 +419,6 @@ class DownloadSection(QFrame):
         # delattr(self, '_download_processed')
 
     def on_download_error(self, error_message):
-        self.main_window.log_info(f"Download error: {error_message}")
+        logging.info(f"Download error: {error_message}")
         QApplication.processEvents()  # 确保UI更新
         MessageBox("错误", f"下载失败: {error_message}", self).exec()

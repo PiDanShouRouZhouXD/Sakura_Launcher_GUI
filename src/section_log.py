@@ -1,39 +1,54 @@
-from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QVBoxLayout, QFrame
+import logging
+from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtWidgets import QFrame
 from qfluentwidgets import PushButton, TextEdit, FluentIcon as FIF
 
-from .common import processes
+from .ui import UiCol
+
+
+class LogEmitter(QObject):
+    sig = Signal(str)
+
+
+class LogHandler(logging.Handler):
+    emitter = LogEmitter()
+
+    def emit(self, record):
+        msg = self.format(record)
+        self.emitter.sig.emit(msg)
 
 
 class LogSection(QFrame):
+    handler = LogHandler()
+
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName(title.replace(" ", "-"))
         self._init_ui()
 
+        logger = logging.getLogger()
+        logger.addHandler(self.handler)
+        logger.setLevel(logging.DEBUG)
+        self.handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+
     def _init_ui(self):
-        layout = QVBoxLayout()
+        log_display = TextEdit()
+        log_display.setReadOnly(True)
 
-        self.log_display = TextEdit(self)
-        self.log_display.setReadOnly(True)
-        layout.addWidget(self.log_display)
+        def append_log(msg):
+            log_display.append(msg)
+            log_display.ensureCursorVisible()
 
-        self.clear_log_button = PushButton(FIF.DELETE, "清空日志", self)
-        self.clear_log_button.clicked.connect(self.clear_log)
-        layout.addWidget(self.clear_log_button)
+        self.handler.emitter.sig.connect(append_log, Qt.UniqueConnection)
 
+        def clear_log():
+            log_display.clear()
+
+        button_clear = PushButton(FIF.DELETE, "清空日志")
+        button_clear.clicked.connect(clear_log)
+
+        layout = UiCol(
+            log_display,
+            button_clear,
+        )
         self.setLayout(layout)
-
-    def clear_log(self):
-        self.log_display.clear()
-
-    def log_info(self, message):
-        self.log_display.append(message)
-        self.log_display.ensureCursorVisible()
-
-    @Slot()
-    def terminate_all_processes(self):
-        for proc in processes:
-            proc.terminate()
-        processes.clear()
-        self.log_info("所有进程已终止。")

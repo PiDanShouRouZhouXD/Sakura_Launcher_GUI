@@ -1,3 +1,4 @@
+import logging
 import sys
 import os
 import json
@@ -158,7 +159,7 @@ class MainWindow(MSFluentWindow):
 
     def get_llamacpp_version(self, executable_path):
         try:
-            self.log_info(f"尝试执行命令: {executable_path} --version")
+            logging.info(f"尝试执行命令: {executable_path} --version")
             result = subprocess.run(
                 [executable_path, "--version"],
                 capture_output=True,
@@ -167,16 +168,16 @@ class MainWindow(MSFluentWindow):
                 shell=True,
             )
             version_output = result.stderr.strip()  # 使用 stderr 而不是 stdout
-            self.log_info(f"版本输出: {version_output}")
+            logging.info(f"版本输出: {version_output}")
             version_match = re.search(r"version: (\d+)", version_output)
             if version_match:
                 return int(version_match.group(1))
             else:
-                self.log_info("无法匹配版本号")
+                logging.info("无法匹配版本号")
         except subprocess.TimeoutExpired as e:
-            self.log_info(f"获取llama.cpp版本超时: {e.stdout}, {e.stderr}")
+            logging.info(f"获取llama.cpp版本超时: {e.stdout}, {e.stderr}")
         except Exception as e:
-            self.log_info(f"获取llama.cpp版本时出错: {str(e)}")
+            logging.info(f"获取llama.cpp版本时出错: {str(e)}")
         return None
 
     def _run_llamacpp(self, section, old_executable, new_executable=None):
@@ -193,8 +194,8 @@ class MainWindow(MSFluentWindow):
 
         model_name = section.model_path.currentText().split(os.sep)[-1]
         model_path = self._add_quotes(section.model_path.currentText())
-        self.log_info(f"模型路径: {model_path}")
-        self.log_info(f"模型名称: {model_name}")
+        logging.info(f"模型路径: {model_path}")
+        logging.info(f"模型名称: {model_name}")
 
         # 判断使用哪个可执行文件
         executable_path = os.path.join(
@@ -212,7 +213,7 @@ class MainWindow(MSFluentWindow):
 
         # 获取llama.cpp版本
         version = self.get_llamacpp_version(executable_path.strip('"'))
-        self.log_info(f"llama.cpp版本: {version}")
+        logging.info(f"llama.cpp版本: {version}")
 
         if custom_command:
             command = f"{executable_path} --model {model_path} {custom_command}"
@@ -238,7 +239,7 @@ class MainWindow(MSFluentWindow):
 
                 # 根据版本添加--slots参数
                 if version is not None and version >= 3898:
-                    self.log_info("版本大于等于3898，添加--slots参数")
+                    logging.info("版本大于等于3898，添加--slots参数")
                     command += " --slots"
             elif old_executable == "llama-bench":
                 command += f" -ngl {section.gpu_layers_spinbox.value()}"
@@ -273,11 +274,11 @@ class MainWindow(MSFluentWindow):
                     env, selected_gpu, selected_index, manual_index
                 )
             except Exception as e:
-                self.log_info(f"设置GPU环境变量时出错: {str(e)}")
+                logging.info(f"设置GPU环境变量时出错: {str(e)}")
                 MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
                 return
 
-        self.log_info(f"执行命令: {command}")
+        logging.info(f"执行命令: {command}")
 
         # 在运行命令的部分
         if sys.platform == "win32":
@@ -294,10 +295,10 @@ class MainWindow(MSFluentWindow):
                 MessageBox(
                     "错误", "无法找到合适的终端模拟器。请手动运行命令。", self
                 ).exec()
-                self.log_info(f"请手动运行以下命令：\n{command}")
+                logging.info(f"请手动运行以下命令：\n{command}")
                 return
 
-        self.log_info("命令已在新的终端窗口中启动。")
+        logging.info("命令已在新的终端窗口中启动。")
 
     def find_terminal(self):
         terminals = [
@@ -311,10 +312,6 @@ class MainWindow(MSFluentWindow):
             if shutil.which(term):
                 return term
         return None
-
-    def log_info(self, message):
-        self.log_section.log_display.append(message)
-        self.log_section.log_display.ensureCursorVisible()
 
     def closeEvent(self, event):
         self.save_window_state()
@@ -340,7 +337,7 @@ class MainWindow(MSFluentWindow):
         self.run_server_section.refresh_gpus()
 
         if not self.gpu_manager.nvidia_gpus and not self.gpu_manager.amd_gpus:
-            self.log_info("未检测到NVIDIA或AMD GPU")
+            logging.info("未检测到NVIDIA或AMD GPU")
 
     def save_window_state(self):
         if self.settings_section.remember_window_state.isChecked():

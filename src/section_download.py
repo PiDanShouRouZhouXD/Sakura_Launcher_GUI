@@ -72,6 +72,17 @@ def UiDownloadButton(on_click):
     return download_button
 
 
+class RefreshLatestThread(QThread):
+    on_success = Signal()
+
+    def run(self):
+        try:
+            get_latest_cuda_release()
+            self.on_success.emit()
+        except Exception as e:
+            logging.error(f"获取最新CUDA版本时出错: {str(e)}")
+
+
 class DownloadThread(QThread):
     progress = Signal(int)
     finished = Signal()
@@ -256,13 +267,12 @@ class DownloadSection(QFrame):
             table.setCellWidget(row, 2, create_button(llamacpp=llamacpp))
 
     def _create_llamacpp_download_section(self):
-        try:
-            get_latest_cuda_release()
-        except Exception as e:
-            logging.info(f"获取最新CUDA版本时出错: {str(e)}")
-
         self.llamacpp_table = UiTable(["版本", "适合显卡", "下载"])
         self.refresh_llamacpp_table()
+
+        thread = RefreshLatestThread(self)
+        thread.on_success.connect(self.refresh_llamacpp_table)
+        thread.start()
 
         def on_src_change(text):
             self.llamacpp_download_src = text

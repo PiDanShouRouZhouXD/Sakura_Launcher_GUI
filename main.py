@@ -41,7 +41,7 @@ class MainWindow(MSFluentWindow):
             MessageBox(
                 "错误", f"cloudflared 可执行文件不存在: {cloudflared_path}", self
             ).exec()
-        self.setMinimumSize(600, 740)
+        self.setMinimumSize(600, 700)
         self.load_window_state()
 
         # 黑魔法，强行覆盖函数以关闭标签页切换动画
@@ -60,7 +60,7 @@ class MainWindow(MSFluentWindow):
         self.log_section = LogSection("日志输出")
         self.about_section = AboutSection("关于")
         self.config_editor_section = ConfigEditor("配置编辑", self)
-        self.dowload_section = DownloadSection("下载", self)
+        self.dowload_section = DownloadSection("下载")
         self.cf_share_section = CFShareSection("共享", self)
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行")

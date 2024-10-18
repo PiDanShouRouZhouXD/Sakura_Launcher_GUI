@@ -28,7 +28,7 @@ class LogSection(QFrame):
 
         logger = logging.getLogger()
         logger.addHandler(self.handler)
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.INFO)
         self.handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 
     def _init_ui(self):

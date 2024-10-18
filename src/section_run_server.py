@@ -182,11 +182,13 @@ class RunServerSection(QFrame):
     def _create_ip_port_log_option(self):
         self.host_input = UiEditableComboBox(["127.0.0.1", "0.0.0.0"])
         self.port_input = UiLineEdit("", "8080")
-        self.log_format_combo = UiEditableComboBox(["none", "text", "json"])
+        self.gpu_layers_spinbox = SpinBox()
+        self.gpu_layers_spinbox.setRange(0, 200)
+        self.gpu_layers_spinbox.setValue(200)
         return UiRow(
             UiOptionCol("主机地址 --host", self.host_input),
             UiOptionCol("端口 --port", self.port_input),
-            UiOptionCol("日志格式 --log-format", self.log_format_combo),
+            UiOptionCol("GPU层数 -ngl", self.gpu_layers_spinbox),
         )
 
     def _create_benchmark_layout(self):
@@ -220,10 +222,6 @@ class RunServerSection(QFrame):
             UiHLine(),
             layout_extra_options,
             UiOptionRow("配置预设选择", self._create_preset_options()),
-            UiOptionRow(
-                "GPU层数 -ngl",
-                UiSlider(self, "gpu_layers", 200, 0, 200, 1, spinbox_fixed_width=140),
-            ),
             self._create_ip_port_log_option(),
             self._create_benchmark_layout(),
             self.llamacpp_override,
@@ -403,7 +401,6 @@ class RunServerSection(QFrame):
                 "n_parallel": self.n_parallel_spinbox.value(),
                 "host": self.host_input.currentText(),
                 "port": self.port_input.text(),
-                "log_format": self.log_format_combo.currentText(),
                 "gpu_index": self.manully_select_gpu_index.text(),
                 "npp": self.npp_input.text(),
                 "ntg": self.ntg_input.text(),
@@ -465,9 +462,6 @@ class RunServerSection(QFrame):
                     self.n_parallel_spinbox.setValue(config.get("n_parallel", 1))
                     self.host_input.setCurrentText(config.get("host", "127.0.0.1"))
                     self.port_input.setText(config.get("port", "8080"))
-                    self.log_format_combo.setCurrentText(
-                        config.get("log_format", "none")
-                    )
                     self.flash_attention_check.setChecked(
                         config.get("flash_attention", True)
                     )
@@ -513,8 +507,6 @@ class RunServerSection(QFrame):
     def save_advanced_state(self):
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             config_data = json.load(f)
-            config_data["advanced_state"] = (
-                self.menu_advance.isVisible()
-            )
+            config_data["advanced_state"] = self.menu_advance.isVisible()
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config_data, f, ensure_ascii=False, indent=4)

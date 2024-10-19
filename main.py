@@ -20,6 +20,7 @@ from qfluentwidgets import (
 )
 
 from src.common import *
+from src.llamacpp import get_llamacpp_version
 from src.section_run_server import GPUManager, RunServerSection
 from src.section_download import DownloadSection
 from src.section_share import CFShareSection
@@ -130,10 +131,10 @@ class MainWindow(MSFluentWindow):
         return f'"{path}"'
 
     def run_llamacpp_server(self):
-        self._run_llamacpp(self.run_server_section, "server", "llama-server")
+        self._run_llamacpp(self.run_server_section, "llama-server")
 
     def run_llamacpp_server_and_share(self):
-        self._run_llamacpp(self.run_server_section, "server", "llama-server")
+        self._run_llamacpp(self.run_server_section, "llama-server")
         cf_share_url = self.cf_share_section.worker_url_input.text()
         if not cf_share_url:
             MessageBox("错误", "分享链接不能为空", self).exec()
@@ -143,30 +144,7 @@ class MainWindow(MSFluentWindow):
     def run_llamacpp_batch_bench(self):
         self._run_llamacpp(self.run_server_section, "llama-batched-bench")
 
-    def get_llamacpp_version(self, executable_path):
-        try:
-            logging.info(f"尝试执行命令: {executable_path} --version")
-            result = subprocess.run(
-                [executable_path, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-                shell=True,
-            )
-            version_output = result.stderr.strip()  # 使用 stderr 而不是 stdout
-            logging.info(f"版本输出: {version_output}")
-            version_match = re.search(r"version: (\d+)", version_output)
-            if version_match:
-                return int(version_match.group(1))
-            else:
-                logging.info("无法匹配版本号")
-        except subprocess.TimeoutExpired as e:
-            logging.info(f"获取llama.cpp版本超时: {e.stdout}, {e.stderr}")
-        except Exception as e:
-            logging.info(f"获取llama.cpp版本时出错: {str(e)}")
-        return None
-
-    def _run_llamacpp(self, section, old_executable, new_executable=None):
+    def _run_llamacpp(self, section, executable):
         custom_command = section.custom_command.toPlainText().strip()
         llamacpp_override = section.llamacpp_override.text().strip()
         llamacpp_path = (
@@ -184,21 +162,15 @@ class MainWindow(MSFluentWindow):
         logging.info(f"模型名称: {model_name}")
 
         # 判断使用哪个可执行文件
-        executable_path = os.path.join(
-            llamacpp_path, f"{new_executable or old_executable}{exe_extension}"
-        )
-        if new_executable and not os.path.exists(executable_path):
-            executable_path = os.path.join(
-                llamacpp_path, f"{old_executable}{exe_extension}"
-            )
-        elif not os.path.exists(executable_path):
+        executable_path = os.path.join(llamacpp_path, f"{executable}{exe_extension}")
+        if not os.path.exists(executable_path):
             MessageBox("错误", f"可执行文件不存在: {executable_path}", self).exec()
             return
 
         executable_path = self._add_quotes(executable_path)
 
         # 获取llama.cpp版本
-        version = self.get_llamacpp_version(executable_path.strip('"'))
+        version = get_llamacpp_version(llamacpp_path)
         logging.info(f"llama.cpp版本: {version}")
 
         if custom_command:
@@ -206,7 +178,7 @@ class MainWindow(MSFluentWindow):
         else:
             command = f"{executable_path} --model {model_path}"
 
-            if old_executable == "server" or new_executable == "llama-server":
+            if executable == "llama-server":
                 command += f" -ngl {section.gpu_layers_spinbox.value()}"
                 command += f" -c {section.context_length_input.value()}"
                 command += f" -a {model_name}"
@@ -225,16 +197,7 @@ class MainWindow(MSFluentWindow):
                 if version is not None and version >= 3898:
                     logging.info("版本大于等于3898，添加--slots参数")
                     command += " --slots"
-            elif old_executable == "llama-bench":
-                command += f" -ngl {section.gpu_layers_spinbox.value()}"
-
-                if section.flash_attention_check.isChecked():
-                    command += " -fa 1,0"
-                if section.no_mmap_check.isChecked():
-                    command += " -mmp 0"
-                if section.custom_command_append.text().strip():
-                    command += f" {section.custom_command_append.text().strip()}"
-            elif old_executable == "llama-batched-bench":
+            elif executable == "llama-batched-bench":
                 command += f" -c {section.context_length_input.value()}"
                 command += f" -ngl {section.gpu_layers_spinbox.value()}"
                 command += f" -npp {section.npp_input.text()}"

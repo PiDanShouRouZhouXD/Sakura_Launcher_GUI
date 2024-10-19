@@ -10,16 +10,11 @@ from PySide6.QtWidgets import (
     QFrame,
     QHeaderView,
     QTableWidgetItem,
-    QWidget,
-    QStackedWidget,
-    QHBoxLayout,
 )
 from qfluentwidgets import (
-    MessageBox,
     FluentIcon as FIF,
     TableWidget,
     TransparentPushButton,
-    SegmentedWidget,
     ProgressBar,
     InfoBar,
 )
@@ -187,45 +182,12 @@ class DownloadSection(QFrame):
         self.init_ui()
 
     def init_ui(self):
-        pivot = SegmentedWidget()
-        stacked_widget = QStackedWidget()
-
-        def add_sub_interface(widget: QWidget, object_name, text):
-            widget.setObjectName(object_name)
-            stacked_widget.addWidget(widget)
-            pivot.addItem(
-                routeKey=object_name,
-                text=text,
-                onClick=lambda: stacked_widget.setCurrentWidget(widget),
-            )
-
-        add_sub_interface(
-            self._create_sakura_download_section(),
-            "model_download_section",
-            "Sakura模型下载",
-        )
-        add_sub_interface(
-            self._create_llamacpp_download_section(),
-            "llamacpp_download_section",
-            "llama.cpp下载",
-        )
-        add_sub_interface(
-            self._create_download_progress_section(),
-            "download_progress_section",
-            "下载进度",
-        )
-
-        pivot.setCurrentItem(stacked_widget.currentWidget().objectName())
-
-        # 添加全局进度条
-        self.global_progress_bar = ProgressBar()
-
         self.setLayout(
-            UiCol(
-                pivot,
-                stacked_widget,
-                self.global_progress_bar,
-            )
+            UiStackedWidget(
+                ("Sakura模型下载", self._create_sakura_download_section()),
+                ("llama.cpp下载", self._create_llamacpp_download_section()),
+                ("下载进度", self._create_download_progress_section()),
+            ),
         )
 
     def _create_sakura_download_section(self):
@@ -254,23 +216,18 @@ class DownloadSection(QFrame):
 
         description = UiDescription(
             """
-        <p>您可以在这里下载不同版本的模型，模型会保存到启动器所在的目录。您也可以手动从<a href="https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/">Hugging Face镜像站</a>下载模型。</p>
+        <p>您可以在这里下载不同版本的模型，模型会保存到启动器所在的目录。如果启动器无法下载，您也可以手动从<a href="https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/">Hugging Face镜像站</a>下载模型，将下载的gguf文件放到启动器所在文件夹下即可。</p>
         <p>12G以下显存推荐使用GalTransl-7B-v2-IQ4_XS.gguf</p>
-        <p>12G及以上显存推荐使用Sakura-14B-Qwen2beta-v0.9.2_IQ4_XS.gguf</p>
-        <p>如果您的网络状况不佳，可能会出现没有反应或卡住的情况。遇到这种情况时，请直接从上述链接下载后，将模型文件（.gguf）放到启动器所在目录下。</p>
+        <p>12G及以上显存推荐使用sakura-14b-qwen2.5-v1.0-iq4xs.gguf</p>
         """
         )
 
-        section = QWidget()
-        section.setLayout(
-            UiCol(
-                description,
-                UiHLine(),
-                comboBox,
-                table,
-            )
+        return UiCol(
+            description,
+            UiHLine(),
+            comboBox,
+            table,
         )
-        return section
 
     def refresh_llamacpp_table(self):
         table = self.llamacpp_table
@@ -327,23 +284,17 @@ class DownloadSection(QFrame):
         """
         )
 
-        section = QWidget()
-        section.setLayout(
-            UiCol(
-                description,
-                UiHLine(),
-                comboBox,
-                self.llamacpp_table,
-            )
+        return UiCol(
+            description,
+            UiHLine(),
+            comboBox,
+            self.llamacpp_table,
         )
-        return section
 
     def _create_download_progress_section(self):
         self.download_progress_layout = UiCol()
         self.download_progress_layout.addStretch()
-        section = QWidget()
-        section.setLayout(self.download_progress_layout)
-        return section
+        return self.download_progress_layout
 
     def _start_download_task(self, new_task: DownloadTask, on_finish):
         for task in self.download_tasks:
@@ -371,11 +322,7 @@ class DownloadSection(QFrame):
             new_task.state = DownloadTaskState.ERROR
             logging.error(f"下载失败 {error_message}")
             QApplication.processEvents()  # 确保UI更新
-            InfoBar.error(
-                title=f"{new_task.name}下载失败",
-                content=f"{error_message}",
-                parent=self,
-            )
+            UiInfoBarError(self, f"{new_task.name}下载失败", content=f"{error_message}")
 
         thread = DownloadThread(new_task.url, new_task.filename)
         thread.sig_progress.connect(progress_bar.setValue)
@@ -386,11 +333,7 @@ class DownloadSection(QFrame):
         self.download_threads.append(thread)
 
         logging.info(f"开始下载: URL={new_task.url}, 文件名={new_task.filename}")
-        InfoBar.success(
-            title=f"{new_task.name}开始下载",
-            content="",
-            parent=self,
-        )
+        UiInfoBarSuccess(self, f"{new_task.name}开始下载")
 
     def start_download_sakura(self, sakura: Sakura):
         src = self.sakura_download_src
@@ -404,18 +347,10 @@ class DownloadSection(QFrame):
             file_path = os.path.join(CURRENT_DIR, task.filename)
             if sakura.check_sha256(file_path):
                 task.state = DownloadTaskState.SUCCESS
-                InfoBar.success(
-                    title=f"{task.name}下载成功",
-                    content="",
-                    parent=self,
-                )
+                UiInfoBarSuccess(self, f"{task.name}下载成功")
             else:
                 task.state = DownloadTaskState.ERROR
-                InfoBar.error(
-                    title=f"{task.name}校验失败",
-                    content="",
-                    parent=self,
-                )
+                UiInfoBarError(self, f"{task.name}校验失败")
                 os.remove(file_path)  # 删除校验失败的文件
 
         self._start_download_task(task, on_finish=on_download_sakura_finish)
@@ -434,18 +369,10 @@ class DownloadSection(QFrame):
             try:
                 task.state = DownloadTaskState.SUCCESS
                 unzip_llamacpp(CURRENT_DIR, task.filename)
-                InfoBar.success(
-                    title=f"{task.name}下载成功",
-                    content="",
-                    parent=self,
-                )
+                UiInfoBarSuccess(self, f"{task.name}下载成功")
             except Exception as e:
                 task.state = DownloadTaskState.ERROR
-                InfoBar.error(
-                    title=f"{task.name}解压失败",
-                    content=str(e),
-                    parent=self,
-                )
+                UiInfoBarError(self, f"{task.name}解压失败", content=str(e))
             finally:
                 # 无论解压是否成功，都删除原始zip文件
                 if os.path.exists(file_path):
@@ -466,18 +393,10 @@ class DownloadSection(QFrame):
             try:
                 task.state = DownloadTaskState.SUCCESS
                 unzip_llamacpp(CURRENT_DIR, task.filename)
-                InfoBar.success(
-                    title=f"{task.name}下载成功",
-                    content="",
-                    parent=self,
-                )
+                UiInfoBarSuccess(self, f"{task.name}下载成功")
             except Exception as e:
                 task.state = DownloadTaskState.ERROR
-                InfoBar.error(
-                    title=f"{task.name}解压失败",
-                    content=str(e),
-                    parent=self,
-                )
+                UiInfoBarError(self, f"{task.name}解压失败", content=str(e))
             finally:
                 # 无论解压是否成功，都删除原始zip文件
                 if os.path.exists(file_path):
@@ -487,3 +406,17 @@ class DownloadSection(QFrame):
 
         if llamacpp.require_cuda:
             self.start_download_cudart()
+
+    def start_download_launcher(self, version: str):
+        filename = f"Sakura_Launcher_GUI_{version}.exe"
+        task = DownloadTask(
+            name="Sakura启动器",
+            url=f"https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/{version}/{filename}",
+            filename=filename,
+        )
+
+        def on_download_llamacpp_finish():
+            task.state = DownloadTaskState.SUCCESS
+            UiInfoBarSuccess(self, f"{task.name}下载成功")
+
+        self._start_download_task(task, on_finish=on_download_llamacpp_finish)

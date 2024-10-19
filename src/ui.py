@@ -1,6 +1,14 @@
 from typing import List, Tuple
 from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QFrame, QLayout
+from PySide6.QtWidgets import (
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QFrame,
+    QLayout,
+    QStackedWidget,
+)
 from qfluentwidgets import (
     CheckBox,
     ComboBox,
@@ -9,6 +17,12 @@ from qfluentwidgets import (
     Slider,
     SpinBox,
     EditableComboBox,
+    SegmentedWidget,
+    PrimaryPushButton,
+    PushButton,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
 )
 from qfluentwidgets.common.style_sheet import (
     StyleSheetManager,
@@ -146,10 +160,11 @@ def UiEditableComboBox(items):
     return w
 
 
-def UiComboBox(items, on_change):
+def UiComboBox(items, on_change=None):
     w = ComboBox()
     w.addItems(items)
-    w.currentTextChanged.connect(on_change)
+    if on_change:
+        w.currentTextChanged.connect(on_change)
     return w
 
 
@@ -212,6 +227,16 @@ def UiHLine():
     return w
 
 
+def UiButton(text: str, icon: FluentIcon, on_click=None, primary=False):
+    if primary:
+        w = PrimaryPushButton(icon, text)
+    else:
+        w = PushButton(icon, text)
+    if on_click:
+        w.clicked.connect(on_click)
+    return w
+
+
 def UiButtonGroup(*children: List[Child]):
     buttons_layout = UiRow(None, *[(child, 0) for child in children])
     buttons_group = QFrame()
@@ -220,3 +245,54 @@ def UiButtonGroup(*children: List[Child]):
     )
     buttons_group.setLayout(buttons_layout)
     return buttons_group
+
+
+def UiStackedWidget(*children: Tuple[str, QWidget]):
+    pivot = SegmentedWidget()
+    stacked_widget = QStackedWidget()
+
+    def add_sub_interface(name: str, child: QWidget):
+        stacked_widget.addWidget(child)
+        pivot.addItem(
+            routeKey=name,
+            text=name,
+            onClick=lambda: stacked_widget.setCurrentWidget(child),
+        )
+
+    for name, child in children:
+        if issubclass(type(child), QLayout):
+            wrapper = QWidget()
+            wrapper.setLayout(child)
+            child = wrapper
+        add_sub_interface(name, child)
+
+    pivot.setCurrentItem(children[0][0])
+
+    return UiCol(
+        pivot,
+        stacked_widget,
+    )
+
+
+def _UiInfoBar(_fn, parent: QWidget, text: str, content=""):
+    w = _fn(
+        title=text,
+        content=content,
+        duration=2000,
+        position=InfoBarPosition.BOTTOM,
+        parent=parent.window(),
+    )
+    w.hBoxLayout.setContentsMargins(0, 0, 0, 0)
+    w._adjustText()
+
+
+def UiInfoBarSuccess(parent: QWidget, text: str, content=""):
+    _UiInfoBar(InfoBar.success, parent, text, content)
+
+
+def UiInfoBarWarning(parent: QWidget, text: str, content=""):
+    _UiInfoBar(InfoBar.warning, parent, text, content)
+
+
+def UiInfoBarError(parent: QWidget, text: str, content=""):
+    _UiInfoBar(InfoBar.error, parent, text, content)

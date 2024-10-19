@@ -217,7 +217,7 @@ class DownloadSection(QFrame):
         description = UiDescription(
             """
         <p>您可以在这里下载不同版本的模型，模型会保存到启动器所在的目录。如果启动器无法下载，您也可以手动从<a href="https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/">Hugging Face镜像站</a>下载模型，将下载的gguf文件放到启动器所在文件夹下即可。</p>
-        <p>12G以下显存推荐使用GalTransl-7B-v2-IQ4_XS.gguf</p>
+        <p>12G以下显存推荐使用GalTransl-7B-v2.6-IQ4_XS.gguf</p>
         <p>12G及以上显存推荐使用sakura-14b-qwen2.5-v1.0-iq4xs.gguf</p>
         """
         )

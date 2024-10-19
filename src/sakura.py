@@ -39,9 +39,9 @@ SAKURA_DOWNLOAD_SRC = [
 
 SAKURA_LIST = [
     _sakura(
-        repo="GalTransl-7B-v2",
-        filename="GalTransl-7B-v2-IQ4_XS.gguf",
-        sha256="8749e704993a2c327f319278818ba0a7f9633eae8ed187d54eb63456a11812aa",
+        repo="GalTransl-7B-v2.6",
+        filename="GalTransl-7B-v2.6-IQ4_XS.gguf",
+        sha256="f1095c715bd37d6df1f674e86382723fe1fe45c3b4f9c80a4452bcf9128d3eca",
         size=4.29,
     ),
     _sakura(

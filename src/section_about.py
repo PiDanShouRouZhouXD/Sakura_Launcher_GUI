@@ -35,7 +35,7 @@ class AboutSection(QFrame):
 
         self.text_label_2 = QLabel(self)
         self.text_label_2.setStyleSheet("font-size: 18px;")
-        self.text_label_2.setText(f"GUI版本： v{SAKURA_LAUNCHER_GUI_VERSION}")
+        self.text_label_2.setText(f"GUI版本： {SAKURA_LAUNCHER_GUI_VERSION}")
         self.text_label_2.setAlignment(Qt.AlignCenter)
 
         self.hyperlinkButton_1 = HyperlinkButton(

@@ -406,3 +406,17 @@ class DownloadSection(QFrame):
 
         if llamacpp.require_cuda:
             self.start_download_cudart()
+
+    def start_download_launcher(self, version: str):
+        filename = f"Sakura_Launcher_GUI_{version}.exe"
+        task = DownloadTask(
+            name="Sakura启动器",
+            url=f"https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/{version}/{filename}",
+            filename=filename,
+        )
+
+        def on_download_llamacpp_finish():
+            task.state = DownloadTaskState.SUCCESS
+            UiInfoBarSuccess(self, f"{task.name}下载成功")
+
+        self._start_download_task(task, on_finish=on_download_llamacpp_finish)

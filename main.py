@@ -85,6 +85,9 @@ class MainWindow(MSFluentWindow):
         )
 
         # 连接设置更改信号
+        self.settings_section.sig_need_update.connect(
+            self.dowload_section.start_download_launcher
+        )
         self.settings_section.model_sort_combo.currentIndexChanged.connect(
             self.run_server_section.refresh_models
         )
@@ -107,7 +110,7 @@ class MainWindow(MSFluentWindow):
 
         icon = get_resource_path(ICON_FILE)
         self.setWindowIcon(QIcon(icon))
-        self.setWindowTitle(f"Sakura 启动器 v{SAKURA_LAUNCHER_GUI_VERSION}")
+        self.setWindowTitle(f"Sakura 启动器 {SAKURA_LAUNCHER_GUI_VERSION}")
 
         desktop = QApplication.screens()[0].availableGeometry()
         w, h = desktop.width(), desktop.height()

@@ -21,6 +21,6 @@ CURRENT_DIR = get_self_path()
 CONFIG_FILE = "sakura-launcher_config.json"
 ICON_FILE = "icon.png"
 CLOUDFLARED = "cloudflared-windows-amd64.exe"
-SAKURA_LAUNCHER_GUI_VERSION = "0.0.8-beta"
+SAKURA_LAUNCHER_GUI_VERSION = "v0.0.8-beta"
 
 processes = []

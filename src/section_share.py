@@ -745,16 +745,20 @@ class CFShareSection(QFrame):
     @Slot()
     def reregister_node(self):
         if self.check_local_health_status():
+            self.status_label.setText("状态: 正在重新注册节点...")
             worker = NodeRegistrationWorker(self, self.tunnel_url)
             worker.signals.status_update.connect(self.update_status)
             worker.signals.finished.connect(self.on_reregistration_finished)
             QThreadPool.globalInstance().start(worker)
         else:
             logging.info("本地健康检查未通过,跳过重新注册")
+            self.status_label.setText("状态: 本地健康检查未通过,跳过重新注册")
 
     @Slot(bool, str)
     def on_reregistration_finished(self, success, status):
         if success:
             logging.info("节点重新注册成功")
+            self.status_label.setText(f"状态: {status}")
         else:
             logging.warning(f"节点重新注册失败: {status}")
+            self.status_label.setText(f"状态: 重新注册失败 - {status}")

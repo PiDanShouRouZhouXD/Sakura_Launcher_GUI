@@ -538,12 +538,10 @@ class CFShareSection(QFrame):
     def on_registration_finished(self, success, status):
         if success:
             self.status_label.setText(f"状态: {status}")
-            self.main_window.createSuccessInfoBar("成功", "已经成功启动分享。")
+            UiInfoBarSuccess(self, "已经成功启动分享。")
         else:
             self.status_label.setText(f"状态: {status}")
-            self.main_window.createErrorInfoBar(
-                "错误", "无法注册节点，请检查网络连接或稍后重试。"
-            )
+            UiInfoBarError(self, "无法注册节点，请检查网络连接或稍后重试。")
             self.stop_cf_share()
 
     @Slot(str)

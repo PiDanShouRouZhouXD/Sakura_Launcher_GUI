@@ -130,15 +130,12 @@ class RunServerSection(QFrame):
         self.update_context_per_thread()
 
     def _create_menu_base(self):
-        self.advance_button = PushButton(FIF.MORE, "高级设置")
-        self.advance_button.clicked.connect(self.toggle_advanced_settings)
-
         self.benchmark_button = PushButton(FIF.UNIT, "性能测试")
         self.run_and_share_button = PushButton(FIF.IOT, "启动/共享")
         self.run_button = PrimaryPushButton(FIF.PLAY, "启动")
 
         buttons_group = UiButtonGroup(
-            self.advance_button,
+            UiButton("高级设置", FIF.MORE, self.toggle_advanced_settings),
             self.benchmark_button,
             self.run_and_share_button,
             self.run_button,
@@ -422,7 +419,7 @@ class RunServerSection(QFrame):
             json.dump(current_settings, f, ensure_ascii=False, indent=4)
 
         self.load_presets(preset_name)  # 传入当前预设名称
-        self.main_window.createSuccessInfoBar("成功", "预设已保存")
+        UiInfoBarSuccess(self, "预设已保存")
 
     def load_presets(self, current_preset=None):
         self.config_preset_combo.blockSignals(True)  # 阻止信号触发

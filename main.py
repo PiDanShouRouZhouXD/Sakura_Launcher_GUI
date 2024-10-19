@@ -16,18 +16,16 @@ from qfluentwidgets import (
     FluentIcon as FIF,
     setThemeColor,
     NavigationItemPosition,
-    InfoBar,
     InfoBarPosition,
 )
 
 from src.common import *
 from src.section_run_server import GPUManager, RunServerSection
 from src.section_download import DownloadSection
-from src.section_log import LogSection
 from src.section_share import CFShareSection
 from src.section_about import AboutSection
-from src.section_config_editor import ConfigEditor
 from src.section_settings import SettingsSection
+from src.ui import *
 
 
 class MainWindow(MSFluentWindow):
@@ -55,17 +53,13 @@ class MainWindow(MSFluentWindow):
         )
 
     def init_navigation(self):
-        self.settings_section = SettingsSection("设置", self)
+        self.settings_section = SettingsSection("设置")
         self.run_server_section = RunServerSection("运行", self)
-        self.log_section = LogSection("日志输出")
         self.about_section = AboutSection("关于")
-        self.config_editor_section = ConfigEditor("配置编辑", self)
         self.dowload_section = DownloadSection("下载")
         self.cf_share_section = CFShareSection("共享", self)
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行")
-        self.addSubInterface(self.log_section, FIF.BOOK_SHELF, "日志输出")
-        self.addSubInterface(self.config_editor_section, FIF.EDIT, "配置编辑")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
         self.addSubInterface(self.cf_share_section, FIF.IOT, "共享")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
@@ -118,17 +112,6 @@ class MainWindow(MSFluentWindow):
         desktop = QApplication.screens()[0].availableGeometry()
         w, h = desktop.width(), desktop.height()
         self.move(w // 2 - self.width() // 2, h // 2 - self.height() // 2)
-
-    def createSuccessInfoBar(self, title, content):
-        InfoBar.success(
-            title=title,
-            content=content,
-            orient=Qt.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP_RIGHT,
-            duration=2000,
-            parent=self,
-        )
 
     def get_llamacpp_path(self):
         path = self.settings_section.llamacpp_path.text()

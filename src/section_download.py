@@ -20,14 +20,7 @@ from qfluentwidgets import (
 )
 
 from .common import CURRENT_DIR
-from .llamacpp import (
-    LLAMACPP_CUDART,
-    LLAMACPP_DOWNLOAD_SRC,
-    LLAMACPP_LIST,
-    Llamacpp,
-    get_latest_cuda_release,
-    unzip_llamacpp,
-)
+from .llamacpp import *
 from .sakura import SAKURA_DOWNLOAD_SRC, SAKURA_LIST, Sakura
 from .ui import *
 
@@ -404,7 +397,7 @@ class DownloadSection(QFrame):
 
         self._start_download_task(task, on_finish=on_download_llamacpp_finish)
 
-        if llamacpp.require_cuda:
+        if llamacpp.require_cuda and not is_cudart_exist(CURRENT_DIR):
             self.start_download_cudart()
 
     def start_download_launcher(self, version: str):

@@ -117,3 +117,15 @@ def get_latest_cuda_release():
         LLAMACPP_LIST.insert(0, llamacpp)
     else:
         raise RuntimeError("无法获取最新版本信息")
+
+
+def is_cudart_exist(folder: str):
+    llama_folder = os.path.join(folder, "llama")
+    for filename in [
+        "cublas64_12.dll",
+        "cublasLt64_12.dll",
+        "cudart64_12.dll",
+    ]:
+        if not os.path.exists(os.path.join(llama_folder, filename)):
+            return False
+    return True

@@ -280,7 +280,7 @@ def _UiInfoBar(_fn, parent: QWidget, text: str, content=""):
         content=content,
         duration=2000,
         position=InfoBarPosition.BOTTOM,
-        parent=parent,
+        parent=parent.window(),
     )
     w.hBoxLayout.setContentsMargins(0, 0, 0, 0)
     w._adjustText()

@@ -1,18 +1,46 @@
 import logging
 import os
 import json
-from PySide6.QtCore import Qt, Signal, QObject, QTimer
+from PySide6.QtCore import Qt, Signal, QObject, QTimer, QThread
 from PySide6.QtWidgets import QFrame, QHeaderView, QTableWidgetItem
 from qfluentwidgets import (
-    InfoBar,
     TextEdit,
     FluentIcon as FIF,
     TableWidget,
     TransparentPushButton,
 )
+import requests
 
-from .common import CONFIG_FILE
+from .common import CONFIG_FILE, SAKURA_LAUNCHER_GUI_VERSION
 from .ui import *
+
+
+def get_launcher_latest_version():
+    response = requests.get(
+        "https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/latest",
+        allow_redirects=False,
+    )
+    if response.status_code != 302:
+        return
+    redirect_url = response.headers.get("Location")
+    version = redirect_url.split("/")[-1]
+    if version == "releases":
+        return
+    return version
+
+
+class CheckUpdateThread(QThread):
+    sig_version = Signal(str)
+
+    def run(self):
+        try:
+            version = get_launcher_latest_version()
+            if version:
+                self.sig_version.emit(version)
+            else:
+                raise RuntimeError("无法获取最新版本信息")
+        except Exception as e:
+            logging.error(f"获取最新启动器版本时出错: {str(e)}")
 
 
 class ConfigEditor(TableWidget):
@@ -136,6 +164,7 @@ class LogHandler(logging.Handler):
 
 
 class SettingsSection(QFrame):
+    sig_need_update = Signal(str)
     handler = LogHandler()
 
     def __init__(self, title, parent=None):
@@ -154,6 +183,8 @@ class SettingsSection(QFrame):
         )
 
     def _create_setting_section(self):
+        self.check_launcher_update()
+
         def save_base_settings():
             settings = {
                 "llamacpp_path": self.llamacpp_path.text(),
@@ -165,6 +196,7 @@ class SettingsSection(QFrame):
             self.save_settings(settings)
 
         button_group = UiButtonGroup(
+            UiButton("更新版本", FIF.UPDATE, self.update_launcher),
             UiButton("加载设置", FIF.SYNC, self.load_settings),
             UiButton("保存设置", FIF.SAVE, save_base_settings, primary=True),
         )
@@ -232,6 +264,26 @@ class SettingsSection(QFrame):
             button_group,
             log_display,
         )
+
+    def check_launcher_update(self):
+        def notify_need_update(version: str):
+            if version != SAKURA_LAUNCHER_GUI_VERSION:
+                UiInfoBarWarning(self, f"检测到新版本启动器{version}发布")
+
+        thread = CheckUpdateThread(self)
+        thread.sig_version.connect(notify_need_update)
+        thread.start()
+
+    def update_launcher(self):
+        def notify_need_update(version: str):
+            if version != SAKURA_LAUNCHER_GUI_VERSION:
+                self.sig_need_update.emit(version)
+            else:
+                UiInfoBarSuccess(self, "启动器版本已是最新")
+
+        thread = CheckUpdateThread(self)
+        thread.sig_version.connect(notify_need_update)
+        thread.start()
 
     def save_settings(self, settings):
         if not os.path.exists(CONFIG_FILE):

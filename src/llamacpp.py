@@ -1,6 +1,9 @@
 from dataclasses import dataclass
+import logging
 import os
 import re
+import subprocess
+import sys
 from typing import Dict, List
 import zipfile
 import py7zr
@@ -92,9 +95,6 @@ def unzip_llamacpp(folder: str, filename: str):
         print(f"不支持的文件格式: {filename}")
         return
 
-    with open(os.path.join(llama_folder, "VERSION"), "w") as f:
-        f.write(filename)
-
     print(f"{filename} 已成功解压到 {llama_folder}")
 
 
@@ -129,3 +129,29 @@ def is_cudart_exist(folder: str):
         if not os.path.exists(os.path.join(llama_folder, filename)):
             return False
     return True
+
+
+def get_llamacpp_version(llamacpp_path: str):
+    exe_extension = ".exe" if sys.platform == "win32" else ""
+    executable_path = os.path.join(llamacpp_path, f"llama-server{exe_extension}")
+    try:
+        logging.info(f"尝试执行命令: {executable_path} --version")
+        result = subprocess.run(
+            [executable_path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            shell=True,
+        )
+        version_output = result.stderr.strip()  # 使用 stderr 而不是 stdout
+        logging.info(f"版本输出: {version_output}")
+        version_match = re.search(r"version: (\d+)", version_output)
+        if version_match:
+            return int(version_match.group(1))
+        else:
+            logging.info("无法匹配版本号")
+    except subprocess.TimeoutExpired as e:
+        logging.info(f"获取llama.cpp版本超时: {e.stdout}, {e.stderr}")
+    except Exception as e:
+        logging.info(f"获取llama.cpp版本时出错: {str(e)}")
+    return None

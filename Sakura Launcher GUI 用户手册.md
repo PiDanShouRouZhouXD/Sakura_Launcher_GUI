@@ -1,4 +1,4 @@
-# Sakura Launcher GUI 用户手册
+# Sakura Launcher GUI 用户手册（过时，请耐心等待更新）
 
 ## 0. 简介
 

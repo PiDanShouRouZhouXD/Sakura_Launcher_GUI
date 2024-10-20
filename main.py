@@ -207,8 +207,8 @@ class MainWindow(MSFluentWindow):
                     command += " -fa"
                 if section.no_mmap_check.isChecked():
                     command += " --no-mmap"
-                if section.custom_command_append.toPlainText().strip():
-                    command += f" {section.custom_command_append.toPlainText().strip()}"
+                if section.custom_command_append.text().strip():
+                    command += f" {section.custom_command_append.text().strip()}"
 
         env = os.environ.copy()
         if section.gpu_combo.currentText() != "自动":
@@ -324,7 +324,23 @@ if __name__ == "__main__":
     setThemeColor(QColor(222, 142, 204))
     app = QApplication(sys.argv)
     better_font = QFont()
-    better_font.setHintingPreference(QFont.PreferNoHinting)
+
+    # 获取主屏幕的缩放比例和原始分辨率
+    screen = app.primaryScreen()
+    screen_geometry = screen.geometry()
+    device_pixel_ratio = screen.devicePixelRatio()
+    print(f"设备像素比: {device_pixel_ratio}")
+
+    # 计算原始分辨率
+    original_width = screen_geometry.width() * device_pixel_ratio
+    original_height = screen_geometry.height() * device_pixel_ratio
+    print(f"原始屏幕分辨率: {original_width}x{original_height}")
+
+    # 如果原始分辨率大于1920x1080，关闭hinting
+    if original_width > 1920 and original_height > 1080:
+        print("原始屏幕分辨率大于1920x1080，关闭hinting")
+        better_font.setHintingPreference(QFont.PreferNoHinting)
+
     app.setFont(better_font)
     window = MainWindow()
     window.show()

@@ -254,12 +254,12 @@ class CFShareSection(QFrame):
 
         self.metrics_timer = QTimer(self)
         self.metrics_timer.timeout.connect(self.refresh_metrics)
-        self.metrics_timer.setInterval(5000)  # 5秒更新一次
+        self.metrics_timer.setInterval(60000)  # 1分钟 刷新一次
 
         # 添加新的重新注册定时器
         self.reregister_timer = QTimer(self)
         self.reregister_timer.timeout.connect(self.reregister_node)
-        self.reregister_timer.setInterval(60000)  # 60秒 (1分钟) 重新注册一次
+        self.reregister_timer.setInterval(300000)  # 5分钟 重新注册一次
 
     def _init_ui(self):
         # 创建标签页切换控件
@@ -553,7 +553,7 @@ class CFShareSection(QFrame):
     @Slot(dict)
     def update_metrics_display(self, metrics):
         if "error" in metrics:
-            MessageBox("错误", f"获取指标失败: {metrics['error']}", self).exec_()
+            logging.info(f"获取指标失败: {metrics['error']}")
             return
 
         for row in range(self.metrics_table.rowCount()):

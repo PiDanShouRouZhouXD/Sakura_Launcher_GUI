@@ -180,8 +180,8 @@ class CFShareWorker(QRunnable):
                     "--metrics",
                     "localhost:8081",
                 ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                # stdout=subprocess.PIPE,
+                # stderr=subprocess.PIPE,
             )
         except Exception as e:
             self.signals.error_occurred.emit(f"启动 Cloudflare 隧道失败: {str(e)}")

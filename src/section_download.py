@@ -20,14 +20,7 @@ from qfluentwidgets import (
 )
 
 from .common import CURRENT_DIR
-from .llamacpp import (
-    LLAMACPP_CUDART,
-    LLAMACPP_DOWNLOAD_SRC,
-    LLAMACPP_LIST,
-    Llamacpp,
-    get_latest_cuda_release,
-    unzip_llamacpp,
-)
+from .llamacpp import *
 from .sakura import SAKURA_DOWNLOAD_SRC, SAKURA_LIST, Sakura
 from .ui import *
 
@@ -257,12 +250,18 @@ class DownloadSection(QFrame):
         def on_src_change(text):
             self.llamacpp_download_src = text
 
-        comboBox = UiRow(
+        select_download_src = UiRow(
             QLabel("下载源"),
             None,
             UiComboBox(LLAMACPP_DOWNLOAD_SRC, on_src_change),
         )
-        on_src_change(LLAMACPP_DOWNLOAD_SRC[0])
+
+        self.label_current_llamacpp_version = QLabel()
+        self._update_current_llamacpp_version()
+        current_version_hint = UiRow(
+            QLabel("当前版本"),
+            (self.label_current_llamacpp_version, 0),
+        )
 
         description = UiDescription(
             """
@@ -287,7 +286,8 @@ class DownloadSection(QFrame):
         return UiCol(
             description,
             UiHLine(),
-            comboBox,
+            select_download_src,
+            current_version_hint,
             self.llamacpp_table,
         )
 
@@ -334,6 +334,13 @@ class DownloadSection(QFrame):
 
         logging.info(f"开始下载: URL={new_task.url}, 文件名={new_task.filename}")
         UiInfoBarSuccess(self, f"{new_task.name}开始下载")
+
+    def _update_current_llamacpp_version(self):
+        version = get_llamacpp_version(os.path.join(CURRENT_DIR, "llama"))
+        if version:
+            self.label_current_llamacpp_version.setText(f"b{version}")
+        else:
+            self.label_current_llamacpp_version.setText("未检测到")
 
     def start_download_sakura(self, sakura: Sakura):
         src = self.sakura_download_src
@@ -394,6 +401,7 @@ class DownloadSection(QFrame):
                 task.state = DownloadTaskState.SUCCESS
                 unzip_llamacpp(CURRENT_DIR, task.filename)
                 UiInfoBarSuccess(self, f"{task.name}下载成功")
+                self._update_current_llamacpp_version()
             except Exception as e:
                 task.state = DownloadTaskState.ERROR
                 UiInfoBarError(self, f"{task.name}解压失败", content=str(e))
@@ -404,7 +412,7 @@ class DownloadSection(QFrame):
 
         self._start_download_task(task, on_finish=on_download_llamacpp_finish)
 
-        if llamacpp.require_cuda:
+        if llamacpp.require_cuda and not is_cudart_exist(CURRENT_DIR):
             self.start_download_cudart()
 
     def start_download_launcher(self, version: str):

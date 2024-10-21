@@ -1,10 +1,7 @@
 import logging
+import asyncio
 import os
 import json
-import subprocess
-import requests
-import re
-import time
 from PySide6.QtCore import (
     Qt,
     Signal,
@@ -34,211 +31,30 @@ from qfluentwidgets import (
     FluentIcon as FIF,
     TableWidget,
 )
-
-from .common import CLOUDFLARED, CONFIG_FILE, get_resource_path
+from .sakura_share_api import SakuraShareAPI
 from .ui import *
+from .common import CLOUDFLARED, CONFIG_FILE, get_resource_path
 
-
-class NodeRegistrationWorker(QRunnable):
+class AsyncWorker(QRunnable):
     class Signals(QObject):
-        finished = Signal(bool, str)
-        status_update = Signal(str)
+        finished = Signal(object)
+        error = Signal(Exception)
 
-    def __init__(self, cf_share_section, tunnel_url):
+    def __init__(self, coro):
         super().__init__()
-        self.cf_share_section = cf_share_section
-        self.tunnel_url = tunnel_url
+        self.coro = coro
         self.signals = self.Signals()
 
     def run(self):
-        max_retries = 3
-        for attempt in range(max_retries):
-            self.signals.status_update.emit(
-                f"正在注册节点 (尝试 {attempt + 1}/{max_retries})..."
-            )
-            register_status = self.cf_share_section.register_node()
-            if register_status:
-                self.signals.finished.emit(True, f"运行中 - {self.tunnel_url}")
-                return
-            else:
-                if attempt < max_retries - 1:
-                    self.signals.status_update.emit(
-                        f"注册失败，正在重试 ({attempt + 1}/{max_retries})..."
-                    )
-                    time.sleep(2)  # 在重试之间等待2秒
-                else:
-                    self.signals.finished.emit(False, "启动失败")
-
-
-class SlotsRefreshWorker(QRunnable):
-    def __init__(self, worker_url, callback):
-        super().__init__()
-        self.worker_url = worker_url
-        self.callback = callback
-
-    def run(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            response = requests.get(f"{self.worker_url}/health")
-            data = response.json()
-            if data["status"] == "ok":
-                slots_idle = data.get("slots_idle", "未知")
-                slots_processing = data.get("slots_processing", "未知")
-                status = f"在线slot数量: 空闲 {slots_idle}, 处理中 {slots_processing}"
-            else:
-                status = "在线slot数量: 获取失败"
+            result = loop.run_until_complete(self.coro)
+            self.signals.finished.emit(result)
         except Exception as e:
-            status = f"在线slot数量: 获取失败 - {str(e)}"
-        self.callback(status)
-
-
-class RankingRefreshWorker(QRunnable):
-    class Signals(QObject):
-        result = Signal(object)
-
-    def __init__(self, worker_url):
-        super().__init__()
-        self.worker_url = worker_url
-        self.signals = self.Signals()
-
-    def run(self):
-        try:
-            response = requests.get(f"{self.worker_url}/ranking")
-            data = response.json()
-            if isinstance(data, dict):
-                self.signals.result.emit(data)
-            else:
-                self.signals.result.emit({"error": "数据格式错误"})
-        except Exception as e:
-            self.signals.result.emit({"error": f"获取失败 - {str(e)}"})
-
-
-class MetricsRefreshWorker(QRunnable):
-    class Signals(QObject):
-        result = Signal(dict)
-
-    def __init__(self, port):
-        super().__init__()
-        self.port = port
-        self.signals = self.Signals()
-
-    def run(self):
-        try:
-            response = requests.get(f"http://localhost:{self.port}/metrics", timeout=5)
-            if response.status_code == 200:
-                metrics = self.parse_metrics(response.text)
-                self.signals.result.emit(metrics)
-            else:
-                self.signals.result.emit(
-                    {"error": f"HTTP status {response.status_code}"}
-                )
-        except requests.RequestException as e:
-            self.signals.result.emit({"error": f"Request error: {str(e)}"})
-        except Exception as e:
-            self.signals.result.emit({"error": f"Unexpected error: {str(e)}"})
-
-    def parse_metrics(self, metrics_text):
-        metrics = {}
-        for line in metrics_text.split("\n"):
-            if line.startswith("#") or not line.strip():
-                continue
-            try:
-                key, value = line.split(" ")
-                metrics[key.split(":")[-1]] = float(value)
-            except ValueError:
-                continue
-        return metrics
-
-
-class CFShareWorker(QRunnable):
-    class Signals(QObject):
-        status_update = Signal(str)
-        tunnel_url_found = Signal(str)
-        error_occurred = Signal(str)
-        health_check_failed = Signal()
-
-    def __init__(self, port, worker_url):
-        super().__init__()
-        self.port = port
-        self.worker_url = worker_url
-        self.cloudflared_process = None
-        self.tunnel_url = None
-        self.is_running = False
-        self.signals = self.Signals()
-
-    def run(self):
-        self.is_running = True
-        self.signals.status_update.emit("正在启动 Cloudflare 隧道...")
-        cloudflared_path = get_resource_path(CLOUDFLARED)
-
-        try:
-            self.cloudflared_process = subprocess.Popen(
-                [
-                    cloudflared_path,
-                    "tunnel",
-                    "--url",
-                    f"http://localhost:{self.port}",
-                    "--metrics",
-                    "localhost:8081",
-                ],
-                # stdout=subprocess.PIPE,
-                # stderr=subprocess.PIPE,
-            )
-        except Exception as e:
-            self.signals.error_occurred.emit(f"启动 Cloudflare 隧道失败: {str(e)}")
-            return
-
-        self.signals.status_update.emit("正在等待隧道URL...")
-        self.check_tunnel_url()
-
-        # 启动健康检查
-        while self.is_running:
-            if not self.check_local_health_status():
-                self.signals.health_check_failed.emit()
-                break
-            time.sleep(5)  # 每5秒检查一次
-
-    def check_tunnel_url(self):
-        max_attempts = 30  # 最多尝试30次，每次等待1秒
-        for attempt in range(max_attempts):
-            try:
-                metrics_response = requests.get(
-                    "http://localhost:8081/metrics", timeout=5
-                )
-                tunnel_url_match = re.search(
-                    r"(https://.*?\.trycloudflare\.com)", metrics_response.text
-                )
-                if tunnel_url_match:
-                    self.tunnel_url = tunnel_url_match.group(1)
-                    self.signals.tunnel_url_found.emit(self.tunnel_url)
-                    return
-            except Exception as e:
-                pass
-            time.sleep(1)
-            self.signals.status_update.emit(
-                f"等待隧道URL... ({attempt + 1}/{max_attempts})"
-            )
-
-        self.signals.error_occurred.emit("获取隧道URL失败")
-
-    def check_local_health_status(self):
-        health_url = f"http://localhost:{self.port}/health"
-        try:
-            response = requests.get(health_url, timeout=5)
-            data = response.json()
-            return data["status"] in ["ok", "no slot available"]
-        except Exception:
-            return False
-
-    def stop(self):
-        self.is_running = False
-        if self.cloudflared_process:
-            self.cloudflared_process.terminate()
-            try:
-                self.cloudflared_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.cloudflared_process.kill()
-        self.cloudflared_process = None
-
+            self.signals.error.emit(e)
+        finally:
+            loop.close()
 
 class CFShareSection(QFrame):
     def __init__(self, title, main_window, parent=None):
@@ -249,17 +65,18 @@ class CFShareSection(QFrame):
 
         self._init_ui()
         self.load_settings()
-        self.worker = None
+        self.api = None
         self.thread_pool = QThreadPool()
 
         self.metrics_timer = QTimer(self)
         self.metrics_timer.timeout.connect(self.refresh_metrics)
-        self.metrics_timer.setInterval(60000)  # 1分钟 刷新一次
+        self.metrics_timer.setInterval(60000)  # 1分钟刷新一次
 
-        # 添加新的重新注册定时器
         self.reregister_timer = QTimer(self)
         self.reregister_timer.timeout.connect(self.reregister_node)
-        self.reregister_timer.setInterval(300000)  # 5分钟 重新注册一次
+        self.reregister_timer.setInterval(300000)  # 5分钟重新注册一次
+
+        self.is_closing = False
 
     def _init_ui(self):
         # 创建标签页切换控件
@@ -470,90 +287,20 @@ class CFShareSection(QFrame):
 
     @Slot()
     def refresh_metrics(self):
-        port = self.main_window.run_server_section.port_input.text().strip()
-        worker = MetricsRefreshWorker(port)
-        worker.signals.result.connect(self.update_metrics_display)
-        QThreadPool.globalInstance().start(worker)
-
-    @Slot()
-    def start_cf_share(self):
-        worker_url = self.worker_url_input.text().strip()
-        if not worker_url:
-            MessageBox("错误", "请输入WORKER_URL", self).exec_()
-            return
-        port = self.main_window.run_server_section.port_input.text().strip()
-        if not port:
-            MessageBox("错误", "请在运行面板中设置端口号", self).exec_()
-            return
-
-        if not self.check_local_health_status():
-            MessageBox("错误", "本地服务未运行", self).exec_()
-            return
-
-        self.worker = CFShareWorker(port, worker_url)
-        self.worker.signals.status_update.connect(self.update_status)
-        self.worker.signals.tunnel_url_found.connect(self.on_tunnel_url_found)
-        self.worker.signals.error_occurred.connect(self.on_error)
-        self.worker.signals.health_check_failed.connect(self.stop_cf_share)
-
-        self.thread_pool.start(self.worker)
-
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        self.status_label.setText("状态: 正在启动...")
-
-        # 在主线程中启动定时器
-        QMetaObject.invokeMethod(self.metrics_timer, "start", Qt.QueuedConnection)
-        QMetaObject.invokeMethod(self.reregister_timer, "start", Qt.QueuedConnection)
-
-    @Slot()
-    def stop_cf_share(self):
-        # 在主线程中停止定时器
-        QMetaObject.invokeMethod(self.metrics_timer, "stop", Qt.QueuedConnection)
-        QMetaObject.invokeMethod(self.reregister_timer, "stop", Qt.QueuedConnection)
-        un_register_status = self.take_node_offline()
-        if self.worker:
-            self.worker.stop()
-            self.worker = None
-        if un_register_status:
-            self.status_label.setText("状态: 已停止")
-            self.start_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
-
-    @Slot(str)
-    def update_status(self, status):
-        self.status_label.setText(f"状态: {status}")
-
-    @Slot(str)
-    def on_tunnel_url_found(self, tunnel_url):
-        self.tunnel_url = tunnel_url
-        logging.info(f"Tunnel URL: {self.tunnel_url}")
-
-        worker = NodeRegistrationWorker(self, tunnel_url)
-        worker.signals.status_update.connect(self.update_status)
-        worker.signals.finished.connect(self.on_registration_finished)
-        QThreadPool.globalInstance().start(worker)
-
-    @Slot(bool, str)
-    def on_registration_finished(self, success, status):
-        if success:
-            self.status_label.setText(f"状态: {status}")
-            UiInfoBarSuccess(self, "已经成功启动分享。")
+        if self.api:
+            self.refresh_metrics_button.setEnabled(False)  # 禁用刷新按钮
+            worker = AsyncWorker(self.api.get_metrics())
+            worker.signals.finished.connect(self.on_metrics_refreshed)
+            worker.signals.error.connect(self.on_error)
+            self.thread_pool.start(worker)
         else:
-            self.status_label.setText(f"状态: {status}")
-            UiInfoBarError(self, "无法注册节点，请检查网络连接或稍后重试。")
-            self.stop_cf_share()
+            MessageBox("错误", "API未初始化", self).exec_()
 
-    @Slot(str)
-    def on_error(self, error_message):
-        logging.info(error_message)
-        self.stop_cf_share()
-        MessageBox("错误", error_message, self).exec_()
-
-    @Slot(dict)
-    def update_metrics_display(self, metrics):
+    @Slot(object)
+    def on_metrics_refreshed(self, metrics):
+        self.refresh_metrics_button.setEnabled(True)  # 重新启用刷新按钮
         if "error" in metrics:
-            logging.info(f"获取指标失败: {metrics['error']}")
+            logging.error(f"获取指标失败: {metrics['error']}")
             return
 
         for row in range(self.metrics_table.rowCount()):
@@ -589,10 +336,149 @@ class CFShareSection(QFrame):
                             value_item.setText(f"{float(value):.0f}")
                         else:
                             value_item.setText(f"{float(value):.2f}")
-                    except ValueError as e:
+                    except ValueError:
                         value_item.setText(str(value))
-                else:
-                    pass
+
+    @Slot()
+    def start_cf_share(self):
+        worker_url = self.worker_url_input.text().strip()
+        if not worker_url:
+            MessageBox("错误", "请输入WORKER_URL", self).exec_()
+            return
+        port = self.main_window.run_server_section.port_input.text().strip()
+        if not port:
+            MessageBox("错误", "请在运行面板中设置端口号", self).exec_()
+            return
+
+        self.api = SakuraShareAPI(int(port), worker_url)
+
+        async def start_sharing():
+            if not await self.api.check_local_health_status():
+                raise Exception("本地服务未运行")
+
+            cloudflared_path = get_resource_path(CLOUDFLARED)
+            await self.api.start_cloudflare_tunnel(cloudflared_path)
+            if self.api.tunnel_url is None:
+                raise Exception("无法获取隧道URL")
+
+            self.update_status(f"正在注册节点 - {self.api.tunnel_url}")
+
+            success = await self.api.register_node(self.tg_token_input.text().strip())
+            if not success:
+                raise Exception("无法注册节点，请检查网络连接或稍后重试")
+
+            return f"运行中 - {self.api.tunnel_url}"
+
+        worker = AsyncWorker(start_sharing())
+        worker.signals.finished.connect(self.on_start_finished)
+        worker.signals.error.connect(self.on_error)
+        self.thread_pool.start(worker)
+
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        self.status_label.setText("状态: 正在启动...")
+
+        QMetaObject.invokeMethod(self.metrics_timer, "start", Qt.QueuedConnection)
+        QMetaObject.invokeMethod(self.reregister_timer, "start", Qt.QueuedConnection)
+
+    @Slot()
+    def stop_cf_share(self):
+        if self.api and not self.is_closing:
+            async def stop_sharing():
+                try:
+                    await self.api.take_node_offline()
+                except Exception as e:
+                    print(f"Error taking node offline: {str(e)}")
+                finally:
+                    self.api.stop()
+                return "已停止"
+
+            worker = AsyncWorker(stop_sharing())
+            worker.signals.finished.connect(self.on_stop_finished)
+            worker.signals.error.connect(self.on_error)
+            self.thread_pool.start(worker)
+
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            self.status_label.setText("状态: 正在下线...")
+
+            QMetaObject.invokeMethod(self.metrics_timer, "stop", Qt.QueuedConnection)
+            QMetaObject.invokeMethod(self.reregister_timer, "stop", Qt.QueuedConnection)
+        else:
+            print("API未初始化或正在关闭")
+
+    @Slot(str)
+    def update_status(self, status):
+        self.status_label.setText(f"状态: {status}")
+
+    @Slot(object)
+    def on_start_finished(self, status):
+        self.update_status(status)
+        UiInfoBarSuccess(self, "已经成功启动分享。")
+
+    @Slot(str)
+    def on_stop_finished(self, status):
+        self.update_status(status)
+        UiInfoBarSuccess(self, "已经成功下线。")
+
+    @Slot(Exception)
+    def on_error(self, error):
+        logging.error(str(error))
+        self.stop_cf_share()
+        MessageBox("错误", str(error), self).exec_()
+
+    @Slot()
+    def refresh_slots(self):
+        if self.api:
+            self.refresh_slots_button.setEnabled(False)  # 禁用刷新按钮
+            worker = AsyncWorker(self.api.get_slots_status())
+            worker.signals.finished.connect(self.update_slots_status)
+            worker.signals.error.connect(self.on_error_refresh_slots)
+            self.thread_pool.start(worker)
+        else:
+            self.slots_status_label.setText("在线slot数量: 获取失败 - API未初始化")
+
+    @Slot(str)
+    def update_slots_status(self, status):
+        self.slots_status_label.setText(status)
+        self.refresh_slots_button.setEnabled(True)  # 重新启用刷新按钮
+
+    @Slot(Exception)
+    def on_error_refresh_slots(self, error):
+        self.slots_status_label.setText(f"在线slot数量: 获取失败 - {str(error)}")
+        self.refresh_slots_button.setEnabled(True)  # 重新启用刷新按钮
+
+    @Slot()
+    def refresh_ranking(self):
+        if self.api:
+            self.refresh_ranking_button.setEnabled(False)  # 禁用刷新按钮
+            worker = AsyncWorker(self.api.get_ranking())
+            worker.signals.finished.connect(self.update_ranking)
+            worker.signals.error.connect(self.on_error_refresh_ranking)
+            self.thread_pool.start(worker)
+        else:
+            MessageBox("错误", "API未初始化", self).exec_()
+
+    @Slot(object)
+    def update_ranking(self, ranking_data):
+        if "error" in ranking_data:
+            MessageBox("错误", f"获取排名失败: {ranking_data['error']}", self).exec_()
+        else:
+            self.ranking_table.setRowCount(0)
+            for username, count in sorted(
+                ranking_data.items(), key=lambda item: int(item[1]), reverse=True
+            ):
+                row = self.ranking_table.rowCount()
+                self.ranking_table.insertRow(row)
+                self.ranking_table.setItem(row, 0, QTableWidgetItem(username))
+                self.ranking_table.setItem(row, 1, QTableWidgetItem(str(count)))
+
+        self.refresh_ranking_button.setEnabled(True)  # 重新启用刷新按钮
+
+    @Slot(Exception)
+    def on_error_refresh_ranking(self, error):
+        MessageBox("错误", f"获取排名失败: {str(error)}", self).exec_()
+        self.refresh_ranking_button.setEnabled(True)  # 重新启用刷新按钮
 
     def get_metric_key(self, metric_text):
         key_map = {
@@ -629,136 +515,49 @@ class CFShareSection(QFrame):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 settings = json.load(f)
         except FileNotFoundError:
-            return
+            settings = {}
         except json.JSONDecodeError:
-            return
-        self.worker_url_input.setText(
-            settings.get("worker_url", "https://sakura-share.one")
-        )
-
-    @Slot()
-    def refresh_slots(self):
-        worker_url = self.worker_url_input.text().strip()
-        if not worker_url:
-            self.slots_status_label.setText("在线slot数量: 获取失败 - WORKER_URL为空")
-            return
-
-        self.refresh_slots_button.setEnabled(False)
-        self.slots_status_label.setText("在线slot数量: 正在获取...")
-
-        worker = SlotsRefreshWorker(worker_url, self.update_slots_status)
-        QThreadPool.globalInstance().start(worker)
-
-    @Slot(str)
-    def update_slots_status(self, status):
-        self.slots_status_label.setText(status)
-        self.refresh_slots_button.setEnabled(True)
-
-    @Slot()
-    def refresh_ranking(self):
-        worker_url = self.worker_url_input.text().strip()
-        if not worker_url:
-            MessageBox("错误", "请输入WORKER_URL", self).exec_()
-            return
-
-        self.refresh_ranking_button.setEnabled(False)
-
-        worker = RankingRefreshWorker(worker_url)
-        worker.signals.result.connect(self.update_ranking)
-        QThreadPool.globalInstance().start(worker)
-
-    @Slot(object)
-    def update_ranking(self, ranking_data):
-        if "error" in ranking_data:
-            MessageBox("错误", f"获取排名失败: {ranking_data['error']}", self).exec_()
-        else:
-            self.ranking_table.setRowCount(0)
-            for username, count in sorted(
-                ranking_data.items(), key=lambda item: int(item[1]), reverse=True
-            ):
-                row = self.ranking_table.rowCount()
-                self.ranking_table.insertRow(row)
-                self.ranking_table.setItem(row, 0, QTableWidgetItem(username))
-                self.ranking_table.setItem(row, 1, QTableWidgetItem(str(count)))
-
-        self.refresh_ranking_button.setEnabled(True)
-
-    def check_local_health_status(self):
-        port = self.main_window.run_server_section.port_input.text().strip()
-        health_url = f"http://localhost:{port}/health"
-        try:
-            response = requests.get(health_url)
-            data = response.json()
-            if data["status"] in ["ok", "no slot available"]:
-                return True
-            else:
-                logging.info(f"本地服务状态: 不健康 - {data['status']}")
-                return False
-        except Exception as e:
-            logging.info(f"检查本地服务状态失败: {str(e)}")
-            return False
-
-    def register_node(self):
-        try:
-            json_data = {
-                "url": self.tunnel_url,
-                "tg_token": self.tg_token_input.text().strip() or None,
-            }
-            json_data = {k: v for k, v in json_data.items() if v is not None}
-
-            api_response = requests.post(
-                f"{self.worker.worker_url}/register-node",
-                json=json_data,
-                headers={"Content-Type": "application/json"},
-            )
-            logging.info(f"节点注册响应: {api_response.text}")
-            if api_response.status_code == 200:
-                return True
-            else:
-                return False
-        except Exception as e:
-            logging.info(f"节点注册失败: {str(e)}")
-            return False
-
-    def take_node_offline(self):
-        try:
-            offline_response = requests.post(
-                f"{self.worker.worker_url}/delete-node",
-                json={"url": self.tunnel_url},
-                headers={"Content-Type": "application/json"},
-            )
-            logging.info(f"节点下线响应: {offline_response.text}")
-            return True
-        except Exception as e:
-            if "object has no attribute 'worker_url'" in str(e):
-                logging.info("节点已下线")
-                return True
-            else:
-                logging.info(f"节点下线失败：{str(e)}")
-                return False
-
-    def __del__(self):
-        if self.worker:
-            self.worker.stop()
-            self.worker.wait()
+            settings = {}
+        
+        self.worker_url_input.setText(settings.get("worker_url", "https://sakura-share.one"))
 
     @Slot()
     def reregister_node(self):
-        if self.check_local_health_status():
+        if self.api and self.api.tunnel_url:
             self.status_label.setText("状态: 正在重新注册节点...")
-            worker = NodeRegistrationWorker(self, self.tunnel_url)
-            worker.signals.status_update.connect(self.update_status)
+            worker = AsyncWorker(self.api.register_node())
             worker.signals.finished.connect(self.on_reregistration_finished)
-            QThreadPool.globalInstance().start(worker)
+            worker.signals.error.connect(self.on_error)
+            self.thread_pool.start(worker)
         else:
-            logging.info("本地健康检查未通过,跳过重新注册")
-            self.status_label.setText("状态: 本地健康检查未通过,跳过重新注册")
+            logging.info("API未初始化或隧道URL为空，跳过重新注册")
+            self.status_label.setText("状态: API未初始化或隧道URL为空，跳过重新注册")
 
-    @Slot(bool, str)
-    def on_reregistration_finished(self, success, status):
+    @Slot(object)
+    def on_reregistration_finished(self, success):
         if success:
-            logging.info("节点重新注册成功")
-            self.status_label.setText(f"状态: {status}")
+            self.status_label.setText(f"状态: 运行中 - {self.api.tunnel_url}")
+            UiInfoBarSuccess(self, "节点重新注册成功。")
         else:
-            logging.warning(f"节点重新注册失败: {status}")
-            self.status_label.setText(f"状态: 重新注册失败 - {status}")
+            self.status_label.setText("状态: 重新注册失败")
+            UiInfoBarError(self, "无法重新注册节点，请检查网络连接或稍后重试。")
+
+    def closeEvent(self, event):
+        self.cleanup()
+        super().closeEvent(event)
+
+    def cleanup(self):
+        self.is_closing = True
+        if self.api:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self.api.take_node_offline())
+            except Exception as e:
+                print(f"Error during cleanup: {str(e)}")
+            finally:
+                self.api.stop()
+                self.api = None
+
+        self.metrics_timer.stop()
+        self.reregister_timer.stop()

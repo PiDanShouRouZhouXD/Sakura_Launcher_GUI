@@ -192,6 +192,7 @@ class SettingsSection(QFrame):
                 "remember_window_state": self.remember_window_state.isChecked(),
                 "model_sort_option": self.model_sort_combo.currentText(),
                 "remember_advanced_state": self.remember_advanced_state.isChecked(),
+                "no_gpu_ability_check": self.no_gpu_ability_check.isChecked(),
             }
             self.save_settings(settings)
 
@@ -203,6 +204,7 @@ class SettingsSection(QFrame):
 
         self.remember_window_state = UiCheckBox("记住窗口位置和大小", False)
         self.remember_advanced_state = UiCheckBox("记住高级设置状态", False)
+        self.no_gpu_ability_check = UiCheckBox("关闭 GPU 能力检测", False)
         self.model_sort_combo = UiComboBox(["修改时间", "文件名", "文件大小"])
         self.llamacpp_path = UiLineEdit("可选，手动指定llama.cpp路径", "")
 
@@ -215,6 +217,7 @@ class SettingsSection(QFrame):
             button_group,
             self.remember_window_state,
             self.remember_advanced_state,
+            self.no_gpu_ability_check,
             UiOptionRow("模型列表排序", self.model_sort_combo),
             UiOptionRow("llama.cpp文件夹", self.llamacpp_path),
             UiOptionCol("模型搜索路径", self.model_search_paths),
@@ -323,5 +326,8 @@ class SettingsSection(QFrame):
         )
         self.remember_advanced_state.setChecked(
             settings.get("remember_advanced_state", True)
+        )
+        self.no_gpu_ability_check.setChecked(
+            settings.get("no_gpu_ability_check", False)
         )
         self.config_table.set_config(settings.get("运行", []))

@@ -4,3 +4,9 @@ PySide6-Fluent-Widgets[full]
 wmi
 requests
 py7zr
+
+aiohttp
+pydantic
+
+# for dist packing
+pyinstaller

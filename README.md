@@ -49,10 +49,13 @@ cd Sakura_Launcher_GUI
 ```
 
 1. 安装依赖
-   
+
 ```sh
+# 其他依赖: xmake, just, C++工具链
 pip install -r requirements.txt
+just run
 ```
+
 ### **注意事项**
 
 - 请确保已安装Python3.x环境
@@ -63,4 +66,3 @@ pip install -r requirements.txt
 - [llama.cpp](https://github.com/ggerganov/llama.cpp)
 - [SakuraLLM](https://github.com/SakuraLLM/SakuraLLM)
 - [PyQt-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets)
-

@@ -1,0 +1,56 @@
+compile_commands.json
+.cache/
+
+# Xmake cache
+.xmake/
+build/
+
+# MacOS Cache
+.DS_Store
+
+
+
+
+### Created by https://www.gitignore.io
+### xmake ###
+# Xmake cache
+.xmake/
+build/
+
+
+
+### Created by https://www.gitignore.io
+### C++ ###
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+

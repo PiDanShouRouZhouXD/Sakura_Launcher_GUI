@@ -19,6 +19,19 @@ from qfluentwidgets import (
     InfoBarPosition,
 )
 
+# NOTE(kuriko)
+# fix windows aiohttp + pyinstaller bundle problem
+# we use the firefox certs to replace loading from windows cert store
+import ssl
+import certifi
+
+orig_create_default_context = ssl.create_default_context
+def hook_create_default_context(*args, **kwargs):
+    kwargs["cafile"] = certifi.where()  # use the certifi CA bundle
+    return orig_create_default_context(*args, **kwargs)
+
+ssl.create_default_context = hook_create_default_context
+
 from src.common import *
 from src.llamacpp import get_llamacpp_version
 from src.section_run_server import GPUManager, RunServerSection
@@ -27,6 +40,10 @@ from src.section_share import CFShareSection
 from src.section_about import AboutSection
 from src.section_settings import SettingsSection
 from src.ui import *
+
+logging.basicConfig(
+    level=os.environ.get('LOGLEVEL', 'INFO').upper()
+)
 
 
 class MainWindow(MSFluentWindow):
@@ -217,6 +234,36 @@ class MainWindow(MSFluentWindow):
             manual_index = section.manully_select_gpu_index.text()
 
             try:
+                check_result = self.gpu_manager.check_gpu_ability(selected_gpu, model_name)
+                if not check_result.is_capable and not self.settings_section.no_gpu_ability_check.isChecked():
+                    if check_result.is_fatal:
+                        MessageBox(
+                            "致命错误：GPU 不满足需求",
+                            f"GPU {selected_gpu} 无法运行 {model_name}。\n\n"
+                            f"原因：{check_result.reason}\n",
+                            self,
+                        ).exec()
+                        return
+                    else:
+                        box = MessageBox(
+                            "警告：GPU 不满足需求",
+                            f"GPU {selected_gpu} 无法运行 {model_name}。\n\n"
+                            f"原因：{check_result.reason}\n\n"
+                            f"你可以尝试继续（例如核显用户），但是后果自负",
+                            self,
+                        )
+                        is_quit = False
+                        def on_yes():
+                            nonlocal is_quit
+                            is_quit = False
+                        def on_cancel():
+                            nonlocal is_quit
+                            is_quit = True
+                        box.yesSignal.connect(on_yes)
+                        box.cancelSignal.connect(on_cancel)
+                        box.exec()
+                        if is_quit: return
+
                 self.gpu_manager.set_gpu_env(
                     env, selected_gpu, selected_index, manual_index
                 )

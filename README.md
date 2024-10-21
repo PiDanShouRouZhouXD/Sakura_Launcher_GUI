@@ -36,7 +36,8 @@
 
 
 ### **界面预览**
-<div align=center><img src="https://github.com/user-attachments/assets/d22c9554-7c73-4bc4-b0d3-f5bfa88d1990" width="540px"></div>
+
+<div align=center><img src="https://github.com/user-attachments/assets/a8446fe0-8fe4-4a94-8b50-8f50cd707c82" width="540px"></div>
 
 ### **安装步骤**
 

@@ -31,9 +31,10 @@ from qfluentwidgets import (
     FluentIcon as FIF,
     TableWidget,
 )
+
 from .sakura_share_api import SakuraShareAPI
 from .ui import *
-from .common import CLOUDFLARED, CONFIG_FILE, get_resource_path
+from .common import CLOUDFLARED, get_resource_path
 
 
 class AsyncWorker(QRunnable):
@@ -59,14 +60,14 @@ class AsyncWorker(QRunnable):
 
 
 class CFShareSection(QFrame):
-    def __init__(self, title, main_window, parent=None):
+    def __init__(self, title, main_window, setting, parent=None):
         super().__init__(parent)
         self.main_window = main_window
+        self.setting = setting
         self.setObjectName(title.replace(" ", "-"))
         self.title = title
 
         self._init_ui()
-        self.load_settings()
         self.api = None
         self.thread_pool = QThreadPool()
 
@@ -123,9 +124,6 @@ class CFShareSection(QFrame):
         self.refresh_slots_button = PushButton(FIF.SYNC, "刷新在线数量")
         self.refresh_slots_button.clicked.connect(self.refresh_slots)
 
-        self.save_button = PushButton(FIF.SAVE, "保存")
-        self.save_button.clicked.connect(self.save_settings)
-
         self.stop_button = PushButton(FIF.CLOSE, "下线")
         self.stop_button.clicked.connect(self.stop_cf_share)
         self.stop_button.setEnabled(False)
@@ -136,14 +134,16 @@ class CFShareSection(QFrame):
         layout.addWidget(
             UiButtonGroup(
                 self.refresh_slots_button,
-                self.save_button,
                 self.stop_button,
                 self.start_button,
             )
         )
 
-        self.worker_url_input = UiLineEdit("输入WORKER_URL", "https://sakura-share.one")
+        self.worker_url_input = UiLineEdit("输入WORKER_URL", self.setting.worker_url)
         layout.addLayout(UiOptionRow("链接", self.worker_url_input))
+        self.worker_url_input.textChanged.connect(
+            lambda text: self.setting.set_value("worker_url", text.strip())
+        )
 
         self.tg_token_input = UiLineEdit("可选，从@SakuraShareBot获取，用于统计贡献")
         layout.addLayout(UiOptionRow("令牌", self.tg_token_input))
@@ -506,32 +506,6 @@ class CFShareSection(QFrame):
             "延迟的请求数": "requests_deferred",
         }
         return key_map.get(metric_text, "")
-
-    def save_settings(self):
-        settings = {"worker_url": self.worker_url_input.text().strip()}
-        if not os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump({}, f, ensure_ascii=False, indent=4)
-
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            config_data = json.load(f)
-            config_data.update(settings)
-
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config_data, f, ensure_ascii=False, indent=4)
-
-    def load_settings(self):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-        except FileNotFoundError:
-            settings = {}
-        except json.JSONDecodeError:
-            settings = {}
-
-        self.worker_url_input.setText(
-            settings.get("worker_url", "https://sakura-share.one")
-        )
 
     @Slot()
     def reregister_node(self):

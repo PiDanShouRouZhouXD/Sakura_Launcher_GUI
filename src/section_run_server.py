@@ -1,11 +1,7 @@
-from typing import Dict, List
-from dataclasses import dataclass
-from enum import Enum, IntEnum
 import logging
 import os
 import json
 import math
-import subprocess
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QGroupBox
 from qfluentwidgets import (
@@ -20,197 +16,10 @@ from qfluentwidgets import (
     Slider,
 )
 
-from .sakura import SAKURA_LIST, Sakura
-
 from .common import CURRENT_DIR, CONFIG_FILE
+from .gpu import GPUManager
+from .sakura import SAKURA_LIST
 from .ui import *
-
-import ctypes as ct
-
-class GPUDescFFI(ct.Structure):
-    _fields_ = [
-        ("name", ct.c_wchar * 128),
-
-        ("dedicated_gpu_memory", ct.c_size_t),
-        ("dedicated_system_memory", ct.c_size_t),
-        ("shared_system_memory", ct.c_size_t),
-
-        ("current_gpu_memory_usage", ct.c_int64),
-    ]
-
-@dataclass
-class GPUDesc:
-    name: str
-    dedicated_gpu_memory: int
-    dedicated_system_memory: int
-    shared_system_memory: int
-
-    # not implemented for now
-    current_gpu_memory_usage: int
-
-@dataclass
-class GPUAbility:
-    is_capable: bool = True  # Not recommend to use
-
-    # If is_fatal is set, the GPU will be disabled totally
-    is_fatal: bool = False
-
-    reason: str = ""
-
-class GPUType(IntEnum):
-    NVIDIA = 1
-    AMD = 2
-    INTEL = 3
-    UNKNOWN = 255
-
-
-class GPUManager:
-    def __init__(self):
-        self.nvidia_gpus: List[str] = []
-        self.amd_gpus: List[str] = []
-        self.intel_gpus: List[str] = []
-
-        # Used for getting gpu desc from gpu name
-        self.gpu_desc_map: Dict[str, GPUDesc] = {}
-
-        # Init native dll
-        if os.name == "nt":
-            self.native = native = ct.CDLL(r"./native.dll")
-            get_all_gpus = native.get_all_gpus
-            get_all_gpus.restype = ct.c_uint  # enum treated as int
-            get_all_gpus.argtypes = (
-                ct.POINTER(GPUDescFFI),   # IN  buf
-                ct.c_size_t,              # IN  max_count
-                ct.POINTER(ct.c_size_t),  # OUT gpu_count
-            )
-
-            # Get gpu infos
-            self.detect_gpus()
-        else:
-            logging.warning("Disable GPU detection on non-windows platform")
-
-    def __get_gpus(self) -> List[GPUDesc]:
-        get_all_gpus = self.native.get_all_gpus
-        gpu_descs = (GPUDescFFI * 255)()
-        gpu_count = ct.c_size_t()
-        retcode = get_all_gpus(gpu_descs, 255, ct.pointer(gpu_count))
-        if retcode != 0:
-            raise RuntimeError(f"Failed to get all gpus with error code: {retcode}")
-
-        ret = []
-        for i in range(int(gpu_count.value)):
-            gpu = GPUDesc(
-                    name=gpu_descs[i].name,
-                    dedicated_gpu_memory=gpu_descs[i].dedicated_gpu_memory,
-                    dedicated_system_memory=gpu_descs[i].dedicated_system_memory,
-                    shared_system_memory=gpu_descs[i].shared_system_memory,
-                    current_gpu_memory_usage=gpu_descs[i].current_gpu_memory_usage,
-                )
-            if gpu.name not in self.gpu_desc_map:
-                self.gpu_desc_map[gpu.name] = gpu
-            logging.info(f"检测到 GPU: {gpu}")
-            ret.append(gpu)
-
-        return ret
-
-    def detect_gpus(self):
-        # 检测NVIDIA GPU
-        try:
-            self.__get_gpus() # init the gpu_desc_map
-        except Exception as e:
-            logging.error(f"detect gpu info failed: {e}")
-
-        try:
-            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-            result = subprocess.run(
-                "nvidia-smi --query-gpu=name --format=csv,noheader",
-                shell=True,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                self.nvidia_gpus = result.stdout.strip().split("\n")
-        except Exception as e:
-            logging.error(f"检测NVIDIA GPU时出错: {str(e)}")
-
-        # 检测AMD GPU
-        try:
-            import wmi
-
-            c = wmi.WMI()
-            amd_gpus_temp = []
-            for gpu in c.Win32_VideoController():
-                if "AMD" in gpu.Name or "ATI" in gpu.Name:
-                    amd_gpus_temp.append(gpu.Name)
-            logging.info(f"检测到AMD GPU(正向列表): {amd_gpus_temp}")
-            # 反向添加AMD GPU
-            self.amd_gpus = list(reversed(amd_gpus_temp))
-            logging.info(f"检测到AMD GPU(反向列表): {self.amd_gpus}")
-        except Exception as e:
-            logging.error(f"检测AMD GPU时出错: {str(e)}")
-
-    def get_gpu_type(self, gpu_name):
-        if "NVIDIA" in gpu_name.upper():
-            return GPUType.NVIDIA
-        elif "AMD" in gpu_name.upper() or "ATI" in gpu_name.upper():
-            return GPUType.AMD
-        # TODO(kuriko): add intel gpu support in future
-        else:
-            return GPUType.UNKNOWN
-
-    def check_gpu_ability(self, gpu_name: str, model_name: str) -> GPUAbility:
-        '''Chech the basic ability of a GPU, such as gpu memory etc'''
-        if gpu_name not in self.gpu_desc_map:
-            return GPUAbility(is_capable=False, reason=f"未找到显卡对应的参数信息")
-
-        gpu = self.gpu_desc_map[gpu_name]
-
-        gpu_type = self.get_gpu_type(gpu_name)
-        if gpu_type not in [GPUType.NVIDIA, GPUType.AMD]:
-            return GPUAbility(is_capable=False, reason=f"目前只支持 NVIDIA 和 AMD 的显卡")
-
-        gpu_mem = gpu.dedicated_gpu_memory
-        gpu_mem_gb = gpu_mem / 1024 / 1024 / 1024
-        model = SAKURA_LIST[model_name]
-        if model \
-            and (gpu_mem_req_gb := model.minimal_gpu_memory_gb) != 0 \
-            and gpu_mem < gpu_mem_req_gb * 1024 * 1024 * 1024:
-            return GPUAbility(
-                is_capable=False,
-                reason= \
-                f"显卡 {gpu_name} 的显存不足\n"
-                f"至少需要 {gpu_mem_req_gb:.2f} GiB 显存\n"
-                f"当前只有 {gpu_mem_gb:.2f} GiB 显存"
-            )
-
-        return GPUAbility(is_capable=True, reason="")
-
-
-    def set_gpu_env(self, env, selected_gpu, selected_index, manual_index=None):
-        gpu_type = self.get_gpu_type(selected_gpu)
-        if manual_index == "":
-            manual_index = None
-        if gpu_type == GPUType.NVIDIA:
-            if manual_index is not None:
-                env["CUDA_VISIBLE_DEVICES"] = str(manual_index)
-                logging.info(f"设置 CUDA_VISIBLE_DEVICES = {manual_index}")
-            else:
-                env["CUDA_VISIBLE_DEVICES"] = str(selected_index)
-                logging.info(f"设置 CUDA_VISIBLE_DEVICES = {selected_index}")
-        elif gpu_type == GPUType.AMD:
-            if manual_index is not None:
-                env["HIP_VISIBLE_DEVICES"] = str(manual_index - len(self.nvidia_gpus))
-                logging.info(
-                    f"设置 HIP_VISIBLE_DEVICES = {manual_index - len(self.nvidia_gpus)}"
-                )
-            else:
-                env["HIP_VISIBLE_DEVICES"] = str(selected_index - len(self.nvidia_gpus))
-                logging.info(
-                    f"设置 HIP_VISIBLE_DEVICES = {selected_index - len(self.nvidia_gpus)}"
-                )
-        else:
-            logging.warning(f"未知的GPU类型: {selected_gpu}")
-        return env
 
 
 class RunServerSection(QFrame):
@@ -248,6 +57,7 @@ class RunServerSection(QFrame):
         self.run_button = PrimaryPushButton(FIF.PLAY, "启动")
 
         buttons_group = UiButtonGroup(
+            UiButton("自动配置", FIF.SETTING, self.auto_configure),
             UiButton("高级设置", FIF.MORE, self.toggle_advanced_settings),
             self.benchmark_button,
             self.run_and_share_button,
@@ -477,6 +287,51 @@ class RunServerSection(QFrame):
         context_per_thread = total_context // n_parallel
         self.context_per_thread_label.setText(
             f"每个工作线程的上下文大小: {context_per_thread}"
+        )
+
+    def auto_configure(self):
+        current_model = self.model_path.currentText()
+        if not current_model:
+            UiInfoBarWarning(self, "请先选择一个模型")
+            return
+
+        model_name = current_model.split(os.sep)[-1]
+        sakura_model = SAKURA_LIST[model_name]
+        if not sakura_model:
+            UiInfoBarWarning(self, "无法找到选中模型的配置信息")
+            return
+
+        gpu_manager: GPUManager = self.main_window.gpu_manager
+        selected_gpu = self.gpu_combo.currentText()
+        if selected_gpu not in gpu_manager.gpu_info_map:
+            UiInfoBarWarning(self, "请先选择一个GPU")
+            return
+        ability = gpu_manager.check_gpu_ability(selected_gpu, model_name)
+        if not ability.is_capable:
+            UiInfoBarWarning(self, ability.reason)
+            return
+        gpu_info = gpu_manager.gpu_info_map[selected_gpu]
+        # 向上取整
+        gpu_memory = math.ceil(
+            gpu_info.dedicated_gpu_memory / (1024 * 1024 * 1024)
+        )  # 转换为GB
+        logging.info(f"显卡 {selected_gpu} 的显存为 {gpu_memory} GiB")
+
+        # 设置np
+        recommended_np = 1  # 默认值
+        for memory, np in sorted(sakura_model.recommended_np.items()):
+            if gpu_memory >= memory:
+                recommended_np = np
+            else:
+                break
+        self.n_parallel_spinbox.setValue(recommended_np)
+
+        # 设置context
+        max_context = recommended_np * 1536  # 每个线程1536 token
+        self.context_length_input.setValue(max_context)
+
+        UiInfoBarSuccess(
+            self, f"已自动配置: context={max_context}, np={recommended_np}"
         )
 
     def save_preset(self):

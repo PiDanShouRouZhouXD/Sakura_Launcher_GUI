@@ -429,14 +429,21 @@ class CFShareSection(QFrame):
 
     @Slot()
     def refresh_slots(self):
-        if self.api:
-            self.refresh_slots_button.setEnabled(False)  # 禁用刷新按钮
-            worker = AsyncWorker(self.api.get_slots_status())
-            worker.signals.finished.connect(self.update_slots_status)
-            worker.signals.error.connect(self.on_error_refresh_slots)
-            self.thread_pool.start(worker)
-        else:
-            self.slots_status_label.setText("在线slot数量: 获取失败 - API未初始化")
+        worker_url = self.worker_url_input.text().strip()
+        if not worker_url:
+            self.slots_status_label.setText("在线slot数量: 未设置链接")
+            UiInfoBarWarning(self, "请先设置链接后再刷新在线数量。")
+            return
+
+        self.refresh_slots_button.setEnabled(False)  # 禁用刷新按钮
+        
+        # 使用现有的API对象或创建一个临时的
+        api = self.api if self.api else SakuraShareAPI(0, worker_url)
+        
+        worker = AsyncWorker(api.get_slots_status())
+        worker.signals.finished.connect(self.update_slots_status)
+        worker.signals.error.connect(self.on_error_refresh_slots)
+        self.thread_pool.start(worker)
 
     @Slot(str)
     def update_slots_status(self, status):

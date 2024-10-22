@@ -66,9 +66,9 @@ class GPUType(IntEnum):
 
 class GPUManager:
     def __init__(self):
-        self.nvidia_gpus: List[GPUDesc] = []
-        self.amd_gpus: List[GPUDesc] = []
-        self.intel_gpus: List[GPUDesc] = []
+        self.nvidia_gpus: List[str] = []
+        self.amd_gpus: List[str] = []
+        self.intel_gpus: List[str] = []
 
         # Used for getting gpu desc from gpu name
         self.gpu_desc_map: Dict[str, GPUDesc] = {}

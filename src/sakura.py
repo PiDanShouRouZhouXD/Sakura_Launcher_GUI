@@ -117,7 +117,8 @@ class sakura_list_init:
             model_list = await parallel_download(
                     self.update_file_mirror_list,
                     json=True,
-                    parser = lambda data: ModelList(**data)
+                    parser = lambda data: ModelList(**data),
+                    timeout=3,
                 )
 
             print(f"当前模型列表：{model_list}")

@@ -28,6 +28,10 @@ from src.section_about import AboutSection
 from src.section_settings import SettingsSection
 from src.ui import *
 
+logging.basicConfig(
+    level=os.environ.get('LOGLEVEL', 'INFO').upper()
+)
+
 
 class MainWindow(MSFluentWindow):
     def __init__(self):
@@ -217,6 +221,40 @@ class MainWindow(MSFluentWindow):
             manual_index = section.manully_select_gpu_index.text()
 
             try:
+                check_result = self.gpu_manager.check_gpu_ability(selected_gpu, model_name)
+                if not check_result.is_capable and not self.settings_section.no_gpu_ability_check.isChecked():
+                    if check_result.is_fatal:
+                        MessageBox(
+                            "致命错误：GPU 不满足强制需求",
+                            f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
+                            f"原因：{check_result.reason}\n\n"
+                            f"注：GPU能力检测对话框可以在设置中关闭",
+                            self,
+                        ).exec()
+                        return
+                    else:
+                        box = MessageBox(
+                            "警告：GPU 不满足运行最低需求",
+                            f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
+                            f"原因：{check_result.reason}\n\n"
+                            f"你可以继续使用，但是运行可能发生异常\n\n"
+                            f"注：GPU能力检测对话框可以在设置中关闭",
+                            self,
+                        )
+                        is_quit = False
+                        def on_yes():
+                            nonlocal is_quit
+                            is_quit = False
+                        def on_cancel():
+                            nonlocal is_quit
+                            is_quit = True
+                        box.yesSignal.connect(on_yes)
+                        box.cancelSignal.connect(on_cancel)
+                        box.yesButton.setText("无视风险继续！")
+                        box.cancelButton.setText("停止")
+                        box.exec()
+                        if is_quit: return
+
                 self.gpu_manager.set_gpu_env(
                     env, selected_gpu, selected_index, manual_index
                 )

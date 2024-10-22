@@ -3,7 +3,6 @@ import sys
 import os
 import json
 import subprocess
-import re
 import shutil
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication, QAbstractScrollArea
@@ -21,16 +20,15 @@ from qfluentwidgets import (
 
 from src.common import *
 from src.llamacpp import get_llamacpp_version
-from src.section_run_server import GPUManager, RunServerSection
+from src.gpu import GPUManager
+from src.section_run_server import RunServerSection
 from src.section_download import DownloadSection
 from src.section_share import CFShareSection
 from src.section_about import AboutSection
 from src.section_settings import SettingsSection
 from src.ui import *
 
-logging.basicConfig(
-    level=os.environ.get('LOGLEVEL', 'INFO').upper()
-)
+logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO").upper())
 
 
 class MainWindow(MSFluentWindow):
@@ -221,8 +219,13 @@ class MainWindow(MSFluentWindow):
             manual_index = section.manully_select_gpu_index.text()
 
             try:
-                check_result = self.gpu_manager.check_gpu_ability(selected_gpu, model_name)
-                if not check_result.is_capable and not self.settings_section.no_gpu_ability_check.isChecked():
+                check_result = self.gpu_manager.check_gpu_ability(
+                    selected_gpu, model_name
+                )
+                if (
+                    not check_result.is_capable
+                    and not self.settings_section.no_gpu_ability_check.isChecked()
+                ):
                     if check_result.is_fatal:
                         MessageBox(
                             "致命错误：GPU 不满足强制需求",
@@ -242,18 +245,22 @@ class MainWindow(MSFluentWindow):
                             self,
                         )
                         is_quit = False
+
                         def on_yes():
                             nonlocal is_quit
                             is_quit = False
+
                         def on_cancel():
                             nonlocal is_quit
                             is_quit = True
+
                         box.yesSignal.connect(on_yes)
                         box.cancelSignal.connect(on_cancel)
                         box.yesButton.setText("无视风险继续！")
                         box.cancelButton.setText("停止")
                         box.exec()
-                        if is_quit: return
+                        if is_quit:
+                            return
 
                 self.gpu_manager.set_gpu_env(
                     env, selected_gpu, selected_index, manual_index

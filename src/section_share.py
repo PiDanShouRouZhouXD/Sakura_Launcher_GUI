@@ -35,6 +35,7 @@ from .sakura_share_api import SakuraShareAPI
 from .ui import *
 from .common import CLOUDFLARED, CONFIG_FILE, get_resource_path
 
+
 class AsyncWorker(QRunnable):
     class Signals(QObject):
         finished = Signal(object)
@@ -55,6 +56,7 @@ class AsyncWorker(QRunnable):
             self.signals.error.emit(e)
         finally:
             loop.close()
+
 
 class CFShareSection(QFrame):
     def __init__(self, title, main_window, parent=None):
@@ -384,6 +386,7 @@ class CFShareSection(QFrame):
     @Slot()
     def stop_cf_share(self):
         if self.api and not self.is_closing:
+
             async def stop_sharing():
                 try:
                     await self.api.take_node_offline()
@@ -436,10 +439,10 @@ class CFShareSection(QFrame):
             return
 
         self.refresh_slots_button.setEnabled(False)  # 禁用刷新按钮
-        
+
         # 使用现有的API对象或创建一个临时的
         api = self.api if self.api else SakuraShareAPI(0, worker_url)
-        
+
         worker = AsyncWorker(api.get_slots_status())
         worker.signals.finished.connect(self.update_slots_status)
         worker.signals.error.connect(self.on_error_refresh_slots)
@@ -525,8 +528,10 @@ class CFShareSection(QFrame):
             settings = {}
         except json.JSONDecodeError:
             settings = {}
-        
-        self.worker_url_input.setText(settings.get("worker_url", "https://sakura-share.one"))
+
+        self.worker_url_input.setText(
+            settings.get("worker_url", "https://sakura-share.one")
+        )
 
     @Slot()
     def reregister_node(self):

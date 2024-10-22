@@ -20,17 +20,17 @@ extern "C" {
     };
 
     __declspec(dllexport) RetCode get_all_gpus(IN GpuDesc* buf, IN size_t max_count, OUT size_t* gpu_count) {
-        IDXGIFactory* pFactory;
-        if(auto hr = CreateDXGIFactory(IID_PPV_ARGS(&pFactory)); hr!= S_OK) {
-            std::cerr << "Failed to create DXGI factory: " << hr << std::endl;
+        IDXGIFactory1* pFactory;
+        if(auto hr = CreateDXGIFactory1(IID_PPV_ARGS(&pFactory)); hr!= S_OK) {
+            std::cerr << "Failed to create DXGI factory: " << std::hex << hr << std::endl;
             return RetCode::WinApiInvokeFailed;
         }
 
         for (int i = 0; i < max_count; ++i) {
-            IDXGIAdapter* pAdapter;
-            DXGI_ADAPTER_DESC desc;
+            IDXGIAdapter1* pAdapter;
+            DXGI_ADAPTER_DESC1 desc;
 
-            if (auto hr = pFactory->EnumAdapters(i, &pAdapter); hr!= S_OK) {
+            if (auto hr = pFactory->EnumAdapters1(i, &pAdapter); hr!= S_OK) {
                 if (hr == DXGI_ERROR_NOT_FOUND) {
                     // Have gone through all adapters
                     break;
@@ -39,13 +39,14 @@ extern "C" {
                 return RetCode::WinApiInvokeFailed;
             };
 
-            if (auto hr = pAdapter->GetDesc(&desc); hr != S_OK) {
-                std::cerr << "Failed to Get Desc for adapter " << i << "with err code: " << hr << std::endl;
+            if (auto hr = pAdapter->GetDesc1(&desc); hr != S_OK) {
+                std::cerr << "Failed to Get Desc for adapter " << i \
+                    << "with err code: " << std::hex << hr << std::endl;
                 return RetCode::WinApiInvokeFailed;
             }
 
-            if (0 == wcscmp(L"Microsoft Basic Render Driver", desc.Description)) {
-                // skip basic render driver, which should be the last adapter
+            if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+                // skip software render driver
                 break;
             }
 

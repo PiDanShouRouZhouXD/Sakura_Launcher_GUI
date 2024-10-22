@@ -77,7 +77,7 @@ class GPUManager:
         if os.name == "nt":
             self.native = native = ct.CDLL(r"./native.dll")
             get_all_gpus = native.get_all_gpus
-            get_all_gpus.restype = ct.c_int  # enum treated as int
+            get_all_gpus.restype = ct.c_uint  # enum treated as int
             get_all_gpus.argtypes = (
                 ct.POINTER(GPUDescFFI),   # IN  buf
                 ct.c_size_t,              # IN  max_count
@@ -93,7 +93,9 @@ class GPUManager:
         get_all_gpus = self.native.get_all_gpus
         gpu_descs = (GPUDescFFI * 255)()
         gpu_count = ct.c_size_t()
-        gpus = get_all_gpus(gpu_descs, 255, ct.pointer(gpu_count))
+        retcode = get_all_gpus(gpu_descs, 255, ct.pointer(gpu_count))
+        if retcode != 0:
+            raise RuntimeError(f"Failed to get all gpus with error code: {retcode}")
 
         ret = []
         for i in range(int(gpu_count.value)):
@@ -104,30 +106,48 @@ class GPUManager:
                     shared_system_memory=gpu_descs[i].shared_system_memory,
                     current_gpu_memory_usage=gpu_descs[i].current_gpu_memory_usage,
                 )
-            self.gpu_desc_map[gpu.name] = gpu
+            if gpu.name not in self.gpu_desc_map:
+                self.gpu_desc_map[gpu.name] = gpu
             logging.info(f"检测到 GPU: {gpu}")
             ret.append(gpu)
 
         return ret
 
     def detect_gpus(self):
+        # 检测NVIDIA GPU
         try:
-            gpus = self.__get_gpus()
-            for gpu in gpus:
-                name = gpu.name
-                ty = self.get_gpu_type(name)
-                if ty == GPUType.NVIDIA:
-                    self.nvidia_gpus.append(name)
-                elif ty == GPUType.AMD:
-                    self.nvidia_gpus.append(name)
-                elif ty == GPUType.INTEL:
-                    self.intel_gpus.append(name)
-                else:
-                    continue
+            self.__get_gpus() # init the gpu_desc_map
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            raise e
+            logging.error(f"detect gpu info failed: {e}")
+
+        try:
+            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            result = subprocess.run(
+                "nvidia-smi --query-gpu=name --format=csv,noheader",
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                self.nvidia_gpus = result.stdout.strip().split("\n")
+        except Exception as e:
+            logging.error(f"检测NVIDIA GPU时出错: {str(e)}")
+
+        # 检测AMD GPU
+        try:
+            import wmi
+
+            c = wmi.WMI()
+            amd_gpus_temp = []
+            for gpu in c.Win32_VideoController():
+                if "AMD" in gpu.Name or "ATI" in gpu.Name:
+                    amd_gpus_temp.append(gpu.Name)
+            logging.info(f"检测到AMD GPU(正向列表): {amd_gpus_temp}")
+            # 反向添加AMD GPU
+            self.amd_gpus = list(reversed(amd_gpus_temp))
+            logging.info(f"检测到AMD GPU(反向列表): {self.amd_gpus}")
+        except Exception as e:
+            logging.error(f"检测AMD GPU时出错: {str(e)}")
 
     def get_gpu_type(self, gpu_name):
         if "NVIDIA" in gpu_name.upper():
@@ -140,9 +160,10 @@ class GPUManager:
 
     def check_gpu_ability(self, gpu_name: str, model_name: str) -> GPUAbility:
         '''Chech the basic ability of a GPU, such as gpu memory etc'''
-        gpu = self.gpu_desc_map[gpu_name]
         if gpu_name not in self.gpu_desc_map:
             return GPUAbility(is_capable=False, reason=f"未找到显卡对应的参数信息")
+
+        gpu = self.gpu_desc_map[gpu_name]
 
         gpu_type = self.get_gpu_type(gpu_name)
         if gpu_type not in [GPUType.NVIDIA, GPUType.AMD]:
@@ -156,7 +177,10 @@ class GPUManager:
             and gpu_mem < gpu_mem_req_gb * 1024 * 1024 * 1024:
             return GPUAbility(
                 is_capable=False,
-                reason=f"{gpu_name}: 显存不足， 至少 {gpu_mem_req_gb:.2f} GiB，当前 {gpu_mem_gb:.2f} GiB"
+                reason= \
+                f"显卡 {gpu_name} 的显存不足\n"
+                f"至少需要 {gpu_mem_req_gb:.2f} GiB 显存\n"
+                f"当前只有 {gpu_mem_gb:.2f} GiB 显存"
             )
 
         return GPUAbility(is_capable=True, reason="")

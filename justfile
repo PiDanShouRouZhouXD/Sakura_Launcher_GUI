@@ -21,6 +21,4 @@ dist: build
     --hidden-import=PySide6.QtGui \
     --hidden-import=qfluentwidgets \
     --hidden-import=aiohttp \
-    --hidden-import=certifi \
-    --hidden-import=ssl \
     --clean

@@ -7,9 +7,9 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 
-async def get(url: str, session: aiohttp.ClientSession, json: bool, parser: None|Callable=None) -> Any:
+async def get(url: str, session: aiohttp.ClientSession, json: bool, timeout=0, parser: None|Callable=None) -> Any:
     try:
-        async with session.get(url=url) as response:
+        async with session.get(url=url, timeout=timeout) as response:
             if json:
                 resp = await response.json(content_type=None)
             else:
@@ -32,9 +32,7 @@ async def parallel_download(urls: List[str], json=False, timeout=0, parser: None
     try:
         ret = None
         async with aiohttp.ClientSession() as session:
-            tasks = [asyncio.create_task(get(url, session, json, parser)) for url in urls]
-            if timeout:
-                tasks.append(asyncio.create_task(asyncio.sleep(timeout)))
+            tasks = [asyncio.create_task(get(url, session, json, timeout, parser)) for url in urls]
 
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             while len(pending) > 0:

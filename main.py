@@ -19,19 +19,6 @@ from qfluentwidgets import (
     InfoBarPosition,
 )
 
-# NOTE(kuriko)
-# fix windows aiohttp + pyinstaller bundle problem
-# we use the firefox certs to replace loading from windows cert store
-import ssl
-import certifi
-
-orig_create_default_context = ssl.create_default_context
-def hook_create_default_context(*args, **kwargs):
-    kwargs["cafile"] = certifi.where()  # use the certifi CA bundle
-    return orig_create_default_context(*args, **kwargs)
-
-ssl.create_default_context = hook_create_default_context
-
 from src.common import *
 from src.llamacpp import get_llamacpp_version
 from src.section_run_server import GPUManager, RunServerSection
@@ -238,18 +225,20 @@ class MainWindow(MSFluentWindow):
                 if not check_result.is_capable and not self.settings_section.no_gpu_ability_check.isChecked():
                     if check_result.is_fatal:
                         MessageBox(
-                            "致命错误：GPU 不满足需求",
-                            f"GPU {selected_gpu} 无法运行 {model_name}。\n\n"
-                            f"原因：{check_result.reason}\n",
+                            "致命错误：GPU 不满足强制需求",
+                            f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
+                            f"原因：{check_result.reason}\n\n"
+                            f"注：GPU能力检测对话框可以在设置中关闭",
                             self,
                         ).exec()
                         return
                     else:
                         box = MessageBox(
-                            "警告：GPU 不满足需求",
-                            f"GPU {selected_gpu} 无法运行 {model_name}。\n\n"
+                            "警告：GPU 不满足运行最低需求",
+                            f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
                             f"原因：{check_result.reason}\n\n"
-                            f"你可以尝试继续（例如核显用户），但是后果自负",
+                            f"你可以继续使用，但是运行可能发生异常\n\n"
+                            f"注：GPU能力检测对话框可以在设置中关闭",
                             self,
                         )
                         is_quit = False
@@ -261,6 +250,8 @@ class MainWindow(MSFluentWindow):
                             is_quit = True
                         box.yesSignal.connect(on_yes)
                         box.cancelSignal.connect(on_cancel)
+                        box.yesButton.setText("无视风险继续！")
+                        box.cancelButton.setText("停止")
                         box.exec()
                         if is_quit: return
 

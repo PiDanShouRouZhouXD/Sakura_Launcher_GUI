@@ -19,6 +19,7 @@ from qfluentwidgets import (
 from .common import CURRENT_DIR, CONFIG_FILE
 from .gpu import GPUManager
 from .sakura import SAKURA_LIST
+from .setting import *
 from .ui import *
 
 
@@ -34,7 +35,8 @@ class RunServerSection(QFrame):
         self.refresh_models()
         self.refresh_gpus()
         self.load_selected_preset()
-        self.load_advanced_state()  # 新增：加载高级设置状态
+
+        setting.model_sort_option_changed.connect(self.refresh_models)
 
     def _init_ui(self):
         menu_base = self._create_menu_base()
@@ -151,7 +153,10 @@ class RunServerSection(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)  # 确保布局的边距也被移除
         self.menu_advance = QFrame()
         self.menu_advance.setLayout(layout)
-        self.menu_advance.setVisible(False)
+        if setting.remember_advanced_state:
+            self.menu_advance.setVisible(setting.advanced_state)
+        else:
+            self.menu_advance.setVisible(False)
         return self.menu_advance
 
     def _create_context_length_layout(self):
@@ -213,7 +218,7 @@ class RunServerSection(QFrame):
         logging.debug(f"找到的模型文件: {models}")
 
         # 从设置中获取排序选项
-        sort_option = self.main_window.settings_section.model_sort_combo.currentText()
+        sort_option = setting.model_sort_option
 
         # 根据选择的排序方式对模型列表进行排序
         if sort_option == "修改时间":
@@ -453,25 +458,6 @@ class RunServerSection(QFrame):
     def toggle_advanced_settings(self):
         new_state = not self.menu_advance.isVisible()
         self.menu_advance.setVisible(new_state)
-        if self.main_window.settings_section.remember_advanced_state.isChecked():
-            self.save_advanced_state()
-
-    def load_advanced_state(self):
-        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
-        try:
-            with open(config_file_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            if (
-                config.get("remember_advanced_state", False)
-                and self.main_window.settings_section.remember_advanced_state.isChecked()
-            ):
-                self.menu_advance.setVisible(config.get("advanced_state", False))
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
-
-    def save_advanced_state(self):
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            config_data = json.load(f)
-            config_data["advanced_state"] = self.menu_advance.isVisible()
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config_data, f, ensure_ascii=False, indent=4)
+        if setting.remember_advanced_state:
+            setting.advanced_state = new_state
+            setting.save_settings()

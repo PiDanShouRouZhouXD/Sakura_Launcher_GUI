@@ -78,6 +78,8 @@ class GPUManager:
             # Get gpu infos
             self.detect_gpus()
         else:
+            self.nvidia_gpus = []
+            self.amd_gpus = []
             logging.warning("Disable GPU detection on non-windows platform")
 
     def __get_gpus(self) -> List[GPUInfo]:
@@ -166,7 +168,7 @@ class GPUManager:
             )
 
         gpu_mem = gpu_info.dedicated_gpu_memory
-        # 大于1GiB时向上取整  
+        # 大于1GiB时向上取整
         gpu_mem_gb = math.ceil(gpu_mem / 1024 / 1024 / 1024) if gpu_mem > 1024 * 1024 * 1024 else gpu_mem / 1024 / 1024 / 1024
         model = SAKURA_LIST[model_name]
         if (

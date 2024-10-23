@@ -66,7 +66,7 @@ class sakura_list_init:
             recommended_np={8: 2, 10: 2, 12: 8, 16: 12, 24: 16},
         ),
         _sakura(
-            repo="SakuraLLM/Sakura-14B-Qwen2.5-v1.0-GGUF",
+            repo="Sakura-14B-Qwen2.5-v1.0-GGUF",
             filename="sakura-14b-qwen2.5-v1.0-iq4xs.gguf",
             sha256="34af88f99c113418d0665d3ceede767c9a12040c9e7c4bb5e87cdb1b1e06e94a",
             minimal_gpu_memory_gb=10,
@@ -74,7 +74,7 @@ class sakura_list_init:
             recommended_np={10: 2, 12: 8, 16: 12, 24: 16},
         ),
         _sakura(
-            repo="SakuraLLM/Sakura-14B-Qwen2.5-v1.0-GGUF",
+            repo="Sakura-14B-Qwen2.5-v1.0-GGUF",
             filename="sakura-14b-qwen2.5-v1.0-q4km.gguf",
             sha256="c87697cd9c7898464426cb7a1ec5e220755affaa08096766e8d20de1853c2063",
             minimal_gpu_memory_gb=10,

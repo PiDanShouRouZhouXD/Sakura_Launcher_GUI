@@ -225,7 +225,15 @@ class RunServerSection(QFrame):
         elif sort_option == "文件大小":
             models.sort(key=lambda x: os.path.getsize(x), reverse=True)
 
-        self.model_path.addItems(models)
+        models_shortest = []
+        for abspath in models:
+            relpath = os.path.relpath(abspath, ".")
+            if len(abspath) > len(relpath):
+                models_shortest.append(relpath)
+            else:
+                models_shortest.append(abspath)
+
+        self.model_path.addItems(models_shortest)
 
     def _create_gpu_selection_layout(self):
         self.gpu_combo = ComboBox(self)

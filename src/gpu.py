@@ -100,7 +100,7 @@ class GPUManager:
                 shared_system_memory=gpu_descs[i].shared_system_memory,
                 current_gpu_memory_usage=gpu_descs[i].current_gpu_memory_usage,
                 index=i,
-                ability=None
+                ability=None,
             )
             if gpu_info.name not in self.gpu_info_map:  # 使用正确的属性名
                 self.gpu_info_map[gpu_info.name] = gpu_info
@@ -169,7 +169,11 @@ class GPUManager:
 
         gpu_mem = gpu_info.dedicated_gpu_memory
         # 大于1GiB时向上取整
-        gpu_mem_gb = math.ceil(gpu_mem / 1024 / 1024 / 1024) if gpu_mem > 1024 * 1024 * 1024 else gpu_mem / 1024 / 1024 / 1024
+        gpu_mem_gb = (
+            math.ceil(gpu_mem / 1024 / 1024 / 1024)
+            if gpu_mem > 1024 * 1024 * 1024
+            else gpu_mem / 1024 / 1024 / 1024
+        )
         model = SAKURA_LIST[model_name]
         if (
             model
@@ -188,17 +192,13 @@ class GPUManager:
         gpu_info.ability = ability
         return ability
 
-    def set_gpu_env(self, env, selected_gpu, selected_index, manual_index=None):
+    def set_gpu_env(self, env, selected_gpu, selected_index):
         gpu_info = self.gpu_info_map[selected_gpu]
-        if manual_index == "":
-            manual_index = None
         if gpu_info.gpu_type == GPUType.NVIDIA:
-            env["CUDA_VISIBLE_DEVICES"] = str(manual_index or selected_index)
+            env["CUDA_VISIBLE_DEVICES"] = str(selected_index)
             logging.info(f"设置 CUDA_VISIBLE_DEVICES = {env['CUDA_VISIBLE_DEVICES']}")
         elif gpu_info.gpu_type == GPUType.AMD:
-            env["HIP_VISIBLE_DEVICES"] = str(
-                (manual_index or selected_index) - len(self.nvidia_gpus)
-            )
+            env["HIP_VISIBLE_DEVICES"] = str((selected_index) - len(self.nvidia_gpus))
             logging.info(f"设置 HIP_VISIBLE_DEVICES = {env['HIP_VISIBLE_DEVICES']}")
         else:
             logging.warning(f"未知的GPU类型: {selected_gpu}")

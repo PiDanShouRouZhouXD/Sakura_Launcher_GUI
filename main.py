@@ -124,10 +124,10 @@ class MainWindow(MSFluentWindow):
         return f'"{path}"'
 
     def run_llamacpp_server(self):
-        self._run_llamacpp(self.run_server_section, "llama-server")
+        self._run_llamacpp("llama-server")
 
     def run_llamacpp_server_and_share(self):
-        self._run_llamacpp(self.run_server_section, "llama-server")
+        self._run_llamacpp("llama-server")
         cf_share_url = self.cf_share_section.worker_url_input.text()
         if not cf_share_url:
             MessageBox("错误", "分享链接不能为空", self).exec()
@@ -135,10 +135,11 @@ class MainWindow(MSFluentWindow):
         QTimer.singleShot(18000, self.cf_share_section.start_cf_share)
 
     def run_llamacpp_batch_bench(self):
-        self._run_llamacpp(self.run_server_section, "llama-batched-bench")
+        self._run_llamacpp("llama-batched-bench")
 
-    def _run_llamacpp(self, section, executable):
-        custom_command = section.custom_command.toPlainText().strip()
+    def _run_llamacpp(self, executable):
+        section = self.run_server_section
+
         llamacpp_override = section.llamacpp_override.text().strip()
         llamacpp_path = (
             llamacpp_override if llamacpp_override else self.get_llamacpp_path()
@@ -166,54 +167,57 @@ class MainWindow(MSFluentWindow):
         version = get_llamacpp_version(llamacpp_path)
         logging.info(f"llama.cpp版本: {version}")
 
-        if custom_command:
-            command = f"{executable_path} --model {model_path} {custom_command}"
-        else:
-            command = f"{executable_path} --model {model_path}"
+        command_raw = f"{executable_path} --model {model_path}"
+        command = command_raw
 
-            if executable == "llama-server":
-                command += f" -ngl {section.gpu_layers_spinbox.value()}"
-                command += f" -c {section.context_length_input.value()}"
-                command += f" -a {model_name}"
-                command += f" --host {section.host_input.currentText()} --port {section.port_input.text()}"
-                command += f" -np {section.n_parallel_spinbox.value()}"
+        if executable == "llama-server":
+            command += f" -ngl {section.gpu_layers_spinbox.value()}"
+            command += f" -c {section.context_length_input.value()}"
+            command += f" -a {model_name}"
+            command += f" --host {section.host_input.currentText()} --port {section.port_input.text()}"
+            command += f" -np {section.n_parallel_spinbox.value()}"
 
-                if section.flash_attention_check.isChecked():
-                    command += " -fa"
-                if section.no_mmap_check.isChecked():
-                    command += " --no-mmap"
-                if section.custom_command_append.text().strip():
-                    command += f" {section.custom_command_append.text().strip()}"
-                command += " --metrics"
+            if section.flash_attention_check.isChecked():
+                command += " -fa"
+            if section.no_mmap_check.isChecked():
+                command += " --no-mmap"
+            command += " --metrics"
 
-                # 根据版本添加--slots参数
-                if version is not None and version >= 3898:
-                    logging.info("版本大于等于3898，添加--slots参数")
-                    command += " --slots"
-            elif executable == "llama-batched-bench":
-                command += f" -c {section.context_length_input.value()}"
-                command += f" -ngl {section.gpu_layers_spinbox.value()}"
-                command += f" -npp {section.npp_input.text()}"
-                command += f" -ntg {section.ntg_input.text()}"
-                command += f" -npl {section.npl_input.text()}"
-                if section.flash_attention_check.isChecked():
-                    command += " -fa"
-                if section.no_mmap_check.isChecked():
-                    command += " --no-mmap"
-                if section.custom_command_append.text().strip():
-                    command += f" {section.custom_command_append.text().strip()}"
+            # 根据版本添加--slots参数
+            if version is not None and version >= 3898:
+                logging.info("版本大于等于3898，添加--slots参数")
+                command += " --slots"
+        elif executable == "llama-batched-bench":
+            command += f" -c {section.context_length_input.value()}"
+            command += f" -ngl {section.gpu_layers_spinbox.value()}"
+            command += f" -npp {section.npp_input.text()}"
+            command += f" -ntg {section.ntg_input.text()}"
+            command += f" -npl {section.npl_input.text()}"
+            if section.flash_attention_check.isChecked():
+                command += " -fa"
+            if section.no_mmap_check.isChecked():
+                command += " --no-mmap"
+
+        command_template: str = section.command_template.toPlainText().strip()
+        if not command_template:
+            command_template = "%cmd%"
+        command_template = command_template.replace("%cmd%", command)
+        command_template = command_template.replace("%cmd_raw%", command_raw)
+        command = command_template
 
         env = os.environ.copy()
         if section.gpu_combo.currentText() != "自动":
             selected_gpu = section.gpu_combo.currentText()
             selected_index = section.gpu_combo.currentIndex()
-            manual_index = section.manully_select_gpu_index.text()
 
             try:
                 check_result = self.gpu_manager.check_gpu_ability(
                     selected_gpu, model_name
                 )
-                if not check_result.is_capable and not self.setting.no_gpu_ability_check:
+                if (
+                    not check_result.is_capable
+                    and not self.setting.no_gpu_ability_check
+                ):
                     if check_result.is_fatal:
                         MessageBox(
                             "致命错误：GPU 不满足强制需求",
@@ -250,9 +254,7 @@ class MainWindow(MSFluentWindow):
                         if is_quit:
                             return
 
-                self.gpu_manager.set_gpu_env(
-                    env, selected_gpu, selected_index, manual_index
-                )
+                self.gpu_manager.set_gpu_env(env, selected_gpu, selected_index)
             except Exception as e:
                 logging.info(f"设置GPU环境变量时出错: {str(e)}")
                 MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()

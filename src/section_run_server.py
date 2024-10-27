@@ -56,7 +56,6 @@ class RunServerSection(QFrame):
         self.run_button = PrimaryPushButton(FIF.PLAY, "启动")
 
         buttons_group = UiButtonGroup(
-            UiButton("自动配置", FIF.SETTING, self.auto_configure),
             UiButton("高级设置", FIF.MORE, self.toggle_advanced_settings),
             self.benchmark_button,
             self.run_and_share_button,
@@ -125,11 +124,19 @@ class RunServerSection(QFrame):
         layout_extra_options.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
 
         self.llamacpp_override = UiLineEdit("覆盖默认llamacpp路径（可选）", "")
-        self.custom_command_append = UiLineEdit("手动追加命令，到UI选择的命令后", "")
 
-        self.custom_command = TextEdit()
-        self.custom_command.setAcceptRichText(False)
-        self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
+        self.command_template = TextEdit()
+        self.command_template.setAcceptRichText(False)
+        self.command_template.setPlaceholderText(
+            "\n".join(
+                [
+                    "自定义命令模板，其中",
+                    "- %cmd%会替换成UI生成的完整命令",
+                    "- %cmd_raw%会被替换成UI生成的命令和模型选项，但不包括其他选项",
+                    "双AMD显卡用户，请使用 cmd.exe /c set HIP_VISIBLE_DEVICES='1' `& %cmd% 来指定显卡",
+                ]
+            )
+        )
 
         layout = UiCol(
             UiHLine(),
@@ -138,8 +145,7 @@ class RunServerSection(QFrame):
             self._create_ip_port_log_option(),
             self._create_benchmark_layout(),
             self.llamacpp_override,
-            self.custom_command_append,
-            self.custom_command,
+            self.command_template,
         )
         layout.setContentsMargins(0, 0, 0, 0)  # 确保布局的边距也被移除
         self.menu_advance = QFrame(self)
@@ -222,14 +228,10 @@ class RunServerSection(QFrame):
         self.model_path.addItems(models)
 
     def _create_gpu_selection_layout(self):
-        layout = QHBoxLayout()
         self.gpu_combo = ComboBox(self)
-        self.manully_select_gpu_index = LineEdit(self)
-        self.manully_select_gpu_index.setPlaceholderText("手动指定GPU索引")
-        self.manully_select_gpu_index.setFixedWidth(140)
-        layout.addWidget(self.gpu_combo)
-        layout.addWidget(self.manully_select_gpu_index)
-        return layout
+        button = UiButton("自动配置", FIF.SETTING, self.auto_configure)
+        button.setFixedWidth(140)
+        return UiRow(self.gpu_combo, button)
 
     def refresh_gpus(self):
         self.gpu_combo.clear()
@@ -338,8 +340,7 @@ class RunServerSection(QFrame):
         self.setting.set_preset(
             preset_name,
             {
-                "custom_command": self.custom_command.toPlainText(),
-                "custom_command_append": self.custom_command_append.text(),
+                "custom_command": self.command_template.toPlainText(),
                 "gpu_layers": self.gpu_layers_spinbox.value(),
                 "flash_attention": self.flash_attention_check.isChecked(),
                 "no_mmap": self.no_mmap_check.isChecked(),
@@ -349,7 +350,6 @@ class RunServerSection(QFrame):
                 "n_parallel": self.n_parallel_spinbox.value(),
                 "host": self.host_input.currentText(),
                 "port": self.port_input.text(),
-                "gpu_index": self.manully_select_gpu_index.text(),
                 "npp": self.npp_input.text(),
                 "ntg": self.ntg_input.text(),
                 "npl": self.npl_input.text(),
@@ -375,10 +375,16 @@ class RunServerSection(QFrame):
         for preset in self.setting.presets:
             if preset["name"] == preset_name:
                 config = preset["config"]
-                self.custom_command.setPlainText(config.get("custom_command", ""))
-                self.custom_command_append.setText(
-                    config.get("custom_command_append", "")
-                )
+
+                self.command_template.setPlainText(config.get("command_template", ""))
+                if self.command_template == "":
+                    cmd1 = config.get("custom_command", "")
+                    cmd2 = config.get("custom_command_append", "")
+                    if cmd1 != "":
+                        self.command_template = "%cmd_raw% " + cmd1
+                    elif cmd2 != "":
+                        self.command_template = "%cmd% " + cmd2
+
                 self.gpu_layers_spinbox.setValue(config.get("gpu_layers", 200))
                 self.model_path.setCurrentText(config.get("model_path", ""))
                 self.context_length_input.setValue(config.get("context_length", 2048))
@@ -393,7 +399,6 @@ class RunServerSection(QFrame):
                 self.npl_input.setText(config.get("npl", "1,2,4,8,16"))
                 self.no_mmap_check.setChecked(config.get("no_mmap", True))
                 self.gpu_combo.setCurrentText(config.get("gpu", ""))
-                self.manully_select_gpu_index.setText(config.get("gpu_index", ""))
                 self.llamacpp_override.setText(config.get("llamacpp_override", ""))
                 self.update_context_per_thread()
                 break

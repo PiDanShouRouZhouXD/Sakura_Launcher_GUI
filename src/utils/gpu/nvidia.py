@@ -14,15 +14,11 @@ def get_nvidia_gpus() -> List[GPUInfo]:
     nvidia_gpu_info: List[GPUInfo] = []
 
     try:
-        env = os.environ.copy()
-        env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-
         result = subprocess.run(
             "nvidia-smi --query-gpu=name,memory.free,memory.total --format=csv,noheader",
             shell=True,
             capture_output=True,
             text=True,
-            env=env,
         )
         if result.returncode == 0:
             output = result.stdout.splitlines()

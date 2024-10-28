@@ -9,7 +9,7 @@ from .sakura import SAKURA_LIST
 from .utils import BytesToGiB
 from .utils.gpu import GPUAbility, GPUType, GPUInfo
 from .utils.gpu.nvidia import get_nvidia_gpus
-
+from .sakura import SakuraCalculator
 
 
 class GPUManager:
@@ -113,7 +113,7 @@ class GPUManager:
         else:
             return GPUType.UNKNOWN
 
-    def check_gpu_ability(self, gpu_name: str, model_name: str) -> GPUAbility:
+    def check_gpu_ability(self, gpu_name: str, model_name: str, context_length: int = None, n_parallel: int = None) -> GPUAbility:
         if gpu_name not in self.gpu_info_map:
             return GPUAbility(is_capable=False, reason=f"未找到显卡对应的参数信息")
 
@@ -125,36 +125,81 @@ class GPUManager:
             )
 
         if gpu_info.avail_dedicated_gpu_memory is not None:
-            gpu_mem = gpu_info.avail_dedicated_gpu_memory
-            gpu_mem_gb = BytesToGiB(gpu_mem)
-            err_msg_if_gpu_mem_insufficient = f"当前系统只有 {gpu_mem_gb:.2f} GiB 剩余显存"
+            ability = self._check_dynamic_memory(gpu_info, model_name, context_length, n_parallel)
         else:
-            # 大于1GiB时向上取整，针对非精确显存容量
-            gpu_mem = gpu_info.dedicated_gpu_memory
-            gpu_mem_gb = math.ceil(BytesToGiB(gpu_mem)) \
-                if gpu_mem > (2**30) else BytesToGiB(gpu_mem)
-            err_msg_if_gpu_mem_insufficient = f"当前显卡总显存为 {gpu_mem_gb:.2f} GiB"
+            ability = self._check_static_memory(gpu_info, model_name)
 
+        gpu_info.ability = ability
+        return ability
+
+    def _check_dynamic_memory(self, gpu_info: GPUInfo, model_name: str, context_length: int = None, n_parallel: int = None) -> GPUAbility:
+        """检查动态可用显存"""
+        gpu_mem = gpu_info.avail_dedicated_gpu_memory
+        gpu_mem_gib = BytesToGiB(gpu_mem)
+        total_mem_gib = BytesToGiB(gpu_info.dedicated_gpu_memory)
+        
+        model = SAKURA_LIST[model_name]
+        if not model:
+            return GPUAbility(is_capable=True, reason="")
+            
+        try:
+            calculator = SakuraCalculator(model)
+            if context_length is None or n_parallel is None:
+                # 如果没有提供参数，使用推荐配置
+                config = calculator.recommend_config(gpu_mem_gib)
+            else:
+                config = {
+                    "context_length": context_length,
+                    "n_parallel": n_parallel
+                }
+                
+            # 计算实际显存使用
+            memory_usage = calculator.calculate_memory_requirements(
+                config["context_length"]
+            )
+            
+            if gpu_mem_gib < memory_usage['total_size_gib']:
+                return GPUAbility(
+                    is_capable=False,
+                    reason=f"显卡 {gpu_info.name} 的显存不足\n"
+                    f"预计需要 {memory_usage['total_size_gib']:.2f} GiB 显存\n"
+                    f"当前系统只有 {gpu_mem_gib:.2f} GiB 剩余显存\n"
+                    f"总显存: {total_mem_gib:.2f} GiB"
+                )
+        except Exception as e:
+            logging.warning(f"显存需求计算失败: {e}")
+            # 如果计算失败，回退到基本显存检查
+            if (gpu_mem_req_gib := model.minimal_gpu_memory_gib) != 0 \
+            and gpu_mem_gib < gpu_mem_req_gib:
+                return GPUAbility(
+                    is_capable=False,
+                    reason=f"显卡 {gpu_info.name} 的显存不足\n"
+                    f"至少需要 {gpu_mem_req_gib:.2f} GiB 显存\n"
+                    f"当前系统只有 {gpu_mem_gib:.2f} GiB 剩余显存"
+                )
+        
+        return GPUAbility(is_capable=True, reason="")
+
+    def _check_static_memory(self, gpu_info: GPUInfo, model_name: str) -> GPUAbility:
+        """检查静态总显存"""
+        gpu_mem = gpu_info.dedicated_gpu_memory
+        gpu_mem_gib = math.ceil(BytesToGiB(gpu_mem)) \
+            if gpu_mem > (2**30) else BytesToGiB(gpu_mem)
+        
         model = SAKURA_LIST[model_name]
         if (
             model
-            and (gpu_mem_req_gb := model.minimal_gpu_memory_gb) != 0
-            and gpu_mem_gb < gpu_mem_req_gb
+            and (gpu_mem_req_gib := model.minimal_gpu_memory_gib) != 0
+            and gpu_mem_gib < gpu_mem_req_gib
         ):
-            ability = GPUAbility(
+            return GPUAbility(
                 is_capable=False,
-                reason=f"显卡 {gpu_name} 的显存不足\n"
-                f"至少需要 {gpu_mem_req_gb:.2f} GiB 显存\n" \
-                + err_msg_if_gpu_mem_insufficient
+                reason=f"显卡 {gpu_info.name} 的显存不足\n"
+                f"至少需要 {gpu_mem_req_gib:.2f} GiB 显存\n"
+                f"当前显卡总显存为 {gpu_mem_gib:.2f} GiB"
             )
-        else:
-            # NOTE(kuriko): no available checks, fallback to allow all GPUs
-            ability = GPUAbility(is_capable=True, reason="")
-
-        # FIXME(kuriko): we cannot cache ability when referred to `avail_dedicated_gpu_memory`,
-        #    which is dynamically changed on loads
-        gpu_info.ability = ability
-        return ability
+        
+        return GPUAbility(is_capable=True, reason="")
 
     def set_gpu_env(self, env, selected_gpu, selected_index):
         gpu_info = self.gpu_info_map[selected_gpu]

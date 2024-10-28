@@ -227,11 +227,21 @@ class RunServerSection(QFrame):
 
         models_shortest = []
         for abspath in models:
-            relpath = os.path.relpath(abspath, ".")
-            if len(abspath) > len(relpath):
-                models_shortest.append(relpath)
+            # 检查文件是否在当前目录下（不在子目录中）
+            if os.path.dirname(abspath) == CURRENT_DIR:
+                # 如果在当前目录，使用文件名作为相对路径
+                models_shortest.append(os.path.basename(abspath))
             else:
-                models_shortest.append(abspath)
+                # 计算相对路径和绝对路径
+                abs_path = os.path.abspath(abspath)
+                # 只有在同一个盘符时才计算相对路径
+                if os.path.splitdrive(abspath)[0] == os.path.splitdrive(CURRENT_DIR)[0]:
+                    rel_path = os.path.relpath(abspath, CURRENT_DIR)
+                    # 选择更短的路径
+                    models_shortest.append(rel_path if len(rel_path) < len(abs_path) else abs_path)
+                else:
+                    # 不同盘符时使用绝对路径
+                    models_shortest.append(abs_path)
 
         self.model_path.addItems(models_shortest)
 
@@ -417,3 +427,5 @@ class RunServerSection(QFrame):
         if self.setting.remember_advanced_state:
             self.setting.advanced_state = new_state
             self.setting.save_settings()
+
+

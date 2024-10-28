@@ -17,7 +17,7 @@ from qfluentwidgets import (
 
 from .common import CURRENT_DIR
 from .gpu import GPUManager
-from .sakura import SAKURA_LIST
+from .sakura import SAKURA_LIST, SakuraCalculator
 from .ui import *
 
 
@@ -317,38 +317,50 @@ class RunServerSection(QFrame):
             UiInfoBarWarning(self, "无法找到选中模型的配置信息")
             return
 
+        # 刷新并获取GPU信息
         gpu_manager: GPUManager = self.main_window.gpu_manager
+        gpu_manager.detect_gpus()
         selected_gpu = self.gpu_combo.currentText()
         if selected_gpu not in gpu_manager.gpu_info_map:
             UiInfoBarWarning(self, "请先选择一个GPU")
             return
+        
+        # 检查GPU能力
+        gpu_info = gpu_manager.gpu_info_map[selected_gpu]
         ability = gpu_manager.check_gpu_ability(selected_gpu, model_name)
         if not ability.is_capable:
             UiInfoBarWarning(self, ability.reason)
             return
-        gpu_info = gpu_manager.gpu_info_map[selected_gpu]
-        # 向上取整
-        gpu_memory = math.ceil(
-            gpu_info.dedicated_gpu_memory / (1024 * 1024 * 1024)
-        )  # 转换为GB
-        logging.info(f"显卡 {selected_gpu} 的显存为 {gpu_memory} GiB")
-
-        # 设置np
-        recommended_np = 1  # 默认值
-        for memory, np in sorted(sakura_model.recommended_np.items()):
-            if gpu_memory >= memory:
-                recommended_np = np
-            else:
-                break
-        self.n_parallel_spinbox.setValue(recommended_np)
-
-        # 设置context
-        max_context = recommended_np * 1536  # 每个线程1536 token
-        self.context_length_input.setValue(max_context)
-
-        UiInfoBarSuccess(
-            self, f"已自动配置: context={max_context}, np={recommended_np}"
-        )
+        
+        available_memory_gib = gpu_info.avail_dedicated_gpu_memory / (2**30)
+        total_memory_gib = gpu_info.dedicated_gpu_memory / (2**30)
+        
+        try:
+            # 创建计算器实例
+            calculator = SakuraCalculator(sakura_model)
+            
+            # 获取推荐配置
+            config = calculator.recommend_config(available_memory_gib)
+            
+            # 应用配置
+            self.n_parallel_spinbox.setValue(config["n_parallel"])
+            self.context_length_input.setValue(config["context_length"])
+            
+            # 计算实际显存使用
+            memory_usage = calculator.calculate_memory_requirements(
+                config["context_length"]
+            )
+            
+            UiInfoBarSuccess(
+                self,
+                f"已自动配置: context={config['context_length']}, "
+                f"np={config['n_parallel']}, \n"
+                f"当前显存占用: {total_memory_gib - available_memory_gib:.2f} GiB, \n"
+                f"预计模型显存占用: {memory_usage['total_size_gib']:.2f} GiB（可能偏大）。 "
+            )
+            
+        except ValueError as e:
+            UiInfoBarWarning(self, str(e))
 
     def save_preset(self):
         preset_name = self.config_preset_combo.currentText()
@@ -427,5 +439,4 @@ class RunServerSection(QFrame):
         if self.setting.remember_advanced_state:
             self.setting.advanced_state = new_state
             self.setting.save_settings()
-
 

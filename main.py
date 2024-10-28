@@ -29,6 +29,8 @@ from src.ui import *
 
 logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO").upper())
 
+# 设置CUDA设备顺序，保证nvidia-smi的输出顺序和llama.cpp的输出顺序一致
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 
 class MainWindow(MSFluentWindow):
     def __init__(self):
@@ -124,6 +126,7 @@ class MainWindow(MSFluentWindow):
         return f'"{path}"'
 
     def run_llamacpp_server(self):
+        self.refresh_gpus()
         self._run_llamacpp("llama-server")
 
     def run_llamacpp_server_and_share(self):
@@ -212,7 +215,9 @@ class MainWindow(MSFluentWindow):
 
             try:
                 check_result = self.gpu_manager.check_gpu_ability(
-                    selected_gpu, model_name
+                    selected_gpu, model_name,
+                    section.context_length_input.value(),
+                    section.n_parallel_spinbox.value()
                 )
                 if (
                     not check_result.is_capable

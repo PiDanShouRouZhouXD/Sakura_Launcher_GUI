@@ -1,0 +1,52 @@
+name: build
+
+on:
+  workflow_dispatch: # allows manual triggering
+    inputs:
+      create_release:
+        description: "Create new release"
+        required: true
+        type: boolean
+  push:
+    branches:
+      - main
+    paths: [".github/workflows/build.yml", "main.spec", "**/*.py"]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ["**/*.py"]
+
+jobs:
+  windows-latest:
+    runs-on: windows-latest
+
+    steps:
+      - name: Clone
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python Environment
+        id: pyenv
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build
+        id: pyinstaller_build
+        shell: powershell
+        run: |
+          pyinstaller --clean --noconfirm main.spec
+          Rename-Item -Path "dist\main.exe" -NewName "Sakura_Launcher_GUI_${GITHUB_SHA::7}.exe"
+
+      - name: Upload artifacts
+        if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.event.inputs.create_release == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          path: |
+            dist

@@ -1,6 +1,6 @@
 pyinstaller -F main.py -w `
-  --icon="icon.png" `
-  --add-data "icon.png:." `
+  --icon="icon.ico" `
+  --add-data "icon.ico:." `
   --add-data "cloudflared-windows-amd64.exe:." `
   --hidden-import=tiktoken_ext.openai_public `
   --hidden-import=tiktoken_ext `

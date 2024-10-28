@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/">
-    <img src="icon.png" alt="Logo" width="80" height="80">
+    <img src="icon.ico" alt="Logo" width="80" height="80">
   </a>
 
   <h3 align="center">Sakura Launcher GUI</h3>

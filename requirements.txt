@@ -1,6 +1,5 @@
-numpy<2
 PySide6==6.6.2
-PySide6-Fluent-Widgets[full]
+PySide6-Fluent-Widgets
 wmi
 requests
 py7zr

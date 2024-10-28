@@ -1,10 +1,9 @@
 import logging
 import sys
 import os
-import json
 import subprocess
 import shutil
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QAbstractScrollArea
 from PySide6.QtGui import QIcon, QColor, QFont
 from qfluentwidgets import (
@@ -15,7 +14,6 @@ from qfluentwidgets import (
     FluentIcon as FIF,
     setThemeColor,
     NavigationItemPosition,
-    InfoBarPosition,
 )
 
 from src.common import *
@@ -26,6 +24,7 @@ from src.section_download import DownloadSection
 from src.section_share import CFShareSection
 from src.section_about import AboutSection
 from src.section_settings import SettingsSection
+from src.setting import *
 from src.ui import *
 
 logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO").upper())
@@ -34,6 +33,7 @@ logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO").upper())
 class MainWindow(MSFluentWindow):
     def __init__(self):
         super().__init__()
+        self.setting = Setting(self)
         self.gpu_manager = GPUManager()
         self.init_navigation()
         self.init_window()
@@ -56,11 +56,11 @@ class MainWindow(MSFluentWindow):
         )
 
     def init_navigation(self):
-        self.settings_section = SettingsSection("设置")
-        self.run_server_section = RunServerSection("运行", self)
+        self.settings_section = SettingsSection("设置", self.setting)
+        self.run_server_section = RunServerSection("运行", self, self.setting)
         self.about_section = AboutSection("关于")
         self.dowload_section = DownloadSection("下载")
-        self.cf_share_section = CFShareSection("共享", self)
+        self.cf_share_section = CFShareSection("共享", self, self.setting)
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
@@ -80,19 +80,10 @@ class MainWindow(MSFluentWindow):
         self.run_server_section.benchmark_button.clicked.connect(
             self.run_llamacpp_batch_bench
         )
-        self.run_server_section.load_preset_button.clicked.connect(
-            self.run_server_section.load_presets
-        )
-        self.run_server_section.refresh_model_button.clicked.connect(
-            self.run_server_section.refresh_models
-        )
 
         # 连接设置更改信号
         self.settings_section.sig_need_update.connect(
             self.dowload_section.start_download_launcher
-        )
-        self.settings_section.model_sort_combo.currentIndexChanged.connect(
-            self.run_server_section.refresh_models
         )
 
         self.setStyleSheet(
@@ -120,23 +111,23 @@ class MainWindow(MSFluentWindow):
         self.move(w // 2 - self.width() // 2, h // 2 - self.height() // 2)
 
     def get_llamacpp_path(self):
-        path = self.settings_section.llamacpp_path.text()
+        path = self.setting.llamacpp_path
         if not path:
             return os.path.join(CURRENT_DIR, "llama")
         return os.path.abspath(path)
 
     def get_model_search_paths(self):
-        paths = self.settings_section.model_search_paths.toPlainText().split("\n")
+        paths = self.setting.model_search_paths.split("\n")
         return [path.strip() for path in paths if path.strip()]
 
     def _add_quotes(self, path):
         return f'"{path}"'
 
     def run_llamacpp_server(self):
-        self._run_llamacpp(self.run_server_section, "llama-server")
+        self._run_llamacpp("llama-server")
 
     def run_llamacpp_server_and_share(self):
-        self._run_llamacpp(self.run_server_section, "llama-server")
+        self._run_llamacpp("llama-server")
         cf_share_url = self.cf_share_section.worker_url_input.text()
         if not cf_share_url:
             MessageBox("错误", "分享链接不能为空", self).exec()
@@ -144,10 +135,11 @@ class MainWindow(MSFluentWindow):
         QTimer.singleShot(18000, self.cf_share_section.start_cf_share)
 
     def run_llamacpp_batch_bench(self):
-        self._run_llamacpp(self.run_server_section, "llama-batched-bench")
+        self._run_llamacpp("llama-batched-bench")
 
-    def _run_llamacpp(self, section, executable):
-        custom_command = section.custom_command.toPlainText().strip()
+    def _run_llamacpp(self, executable):
+        section = self.run_server_section
+
         llamacpp_override = section.llamacpp_override.text().strip()
         llamacpp_path = (
             llamacpp_override if llamacpp_override else self.get_llamacpp_path()
@@ -175,48 +167,48 @@ class MainWindow(MSFluentWindow):
         version = get_llamacpp_version(llamacpp_path)
         logging.info(f"llama.cpp版本: {version}")
 
-        if custom_command:
-            command = f"{executable_path} --model {model_path} {custom_command}"
-        else:
-            command = f"{executable_path} --model {model_path}"
+        command_raw = f"{executable_path} --model {model_path}"
+        command = command_raw
 
-            if executable == "llama-server":
-                command += f" -ngl {section.gpu_layers_spinbox.value()}"
-                command += f" -c {section.context_length_input.value()}"
-                command += f" -a {model_name}"
-                command += f" --host {section.host_input.currentText()} --port {section.port_input.text()}"
-                command += f" -np {section.n_parallel_spinbox.value()}"
+        if executable == "llama-server":
+            command += f" -ngl {section.gpu_layers_spinbox.value()}"
+            command += f" -c {section.context_length_input.value()}"
+            command += f" -a {model_name}"
+            command += f" --host {section.host_input.currentText()} --port {section.port_input.text()}"
+            command += f" -np {section.n_parallel_spinbox.value()}"
 
-                if section.flash_attention_check.isChecked():
-                    command += " -fa"
-                if section.no_mmap_check.isChecked():
-                    command += " --no-mmap"
-                if section.custom_command_append.text().strip():
-                    command += f" {section.custom_command_append.text().strip()}"
-                command += " --metrics"
+            if section.flash_attention_check.isChecked():
+                command += " -fa"
+            if section.no_mmap_check.isChecked():
+                command += " --no-mmap"
+            command += " --metrics"
 
-                # 根据版本添加--slots参数
-                if version is not None and version >= 3898:
-                    logging.info("版本大于等于3898，添加--slots参数")
-                    command += " --slots"
-            elif executable == "llama-batched-bench":
-                command += f" -c {section.context_length_input.value()}"
-                command += f" -ngl {section.gpu_layers_spinbox.value()}"
-                command += f" -npp {section.npp_input.text()}"
-                command += f" -ntg {section.ntg_input.text()}"
-                command += f" -npl {section.npl_input.text()}"
-                if section.flash_attention_check.isChecked():
-                    command += " -fa"
-                if section.no_mmap_check.isChecked():
-                    command += " --no-mmap"
-                if section.custom_command_append.text().strip():
-                    command += f" {section.custom_command_append.text().strip()}"
+            # 根据版本添加--slots参数
+            if version is not None and version >= 3898:
+                logging.info("版本大于等于3898，添加--slots参数")
+                command += " --slots"
+        elif executable == "llama-batched-bench":
+            command += f" -c {section.context_length_input.value()}"
+            command += f" -ngl {section.gpu_layers_spinbox.value()}"
+            command += f" -npp {section.npp_input.text()}"
+            command += f" -ntg {section.ntg_input.text()}"
+            command += f" -npl {section.npl_input.text()}"
+            if section.flash_attention_check.isChecked():
+                command += " -fa"
+            if section.no_mmap_check.isChecked():
+                command += " --no-mmap"
+
+        command_template: str = section.command_template.toPlainText().strip()
+        if not command_template:
+            command_template = "%cmd%"
+        command_template = command_template.replace("%cmd%", command)
+        command_template = command_template.replace("%cmd_raw%", command_raw)
+        command = command_template
 
         env = os.environ.copy()
         if section.gpu_combo.currentText() != "自动":
             selected_gpu = section.gpu_combo.currentText()
             selected_index = section.gpu_combo.currentIndex()
-            manual_index = section.manully_select_gpu_index.text()
 
             try:
                 check_result = self.gpu_manager.check_gpu_ability(
@@ -224,7 +216,7 @@ class MainWindow(MSFluentWindow):
                 )
                 if (
                     not check_result.is_capable
-                    and not self.settings_section.no_gpu_ability_check.isChecked()
+                    and not self.setting.no_gpu_ability_check
                 ):
                     if check_result.is_fatal:
                         MessageBox(
@@ -262,9 +254,7 @@ class MainWindow(MSFluentWindow):
                         if is_quit:
                             return
 
-                self.gpu_manager.set_gpu_env(
-                    env, selected_gpu, selected_index, manual_index
-                )
+                self.gpu_manager.set_gpu_env(env, selected_gpu, selected_index)
             except Exception as e:
                 logging.info(f"设置GPU环境变量时出错: {str(e)}")
                 MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
@@ -332,36 +322,25 @@ class MainWindow(MSFluentWindow):
             logging.info("未检测到NVIDIA或AMD GPU")
 
     def save_window_state(self):
-        if self.settings_section.remember_window_state.isChecked():
-            settings = {
-                "window_geometry": {
-                    "x": self.x(),
-                    "y": self.y(),
-                    "width": self.width(),
-                    "height": self.height(),
-                }
+        if self.setting.remember_window_state:
+            self.setting.window_geometry = {
+                "x": self.x(),
+                "y": self.y(),
+                "width": self.width(),
+                "height": self.height(),
             }
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                config_data = json.load(f)
-            config_data.update(settings)
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(config_data, f, ensure_ascii=False, indent=4)
+            self.setting.save_settings()
 
     def load_window_state(self):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-            if settings.get("remember_window_state", False):
-                geometry = settings.get("window_geometry", {})
-                if geometry:
-                    self.setGeometry(
-                        geometry.get("x", self.x()),
-                        geometry.get("y", self.y()),
-                        geometry.get("width", self.width()),
-                        geometry.get("height", self.height()),
-                    )
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
+        if self.setting.remember_window_state:
+            geometry = self.setting.window_geometry
+            if geometry:
+                self.setGeometry(
+                    geometry.get("x", self.x()),
+                    geometry.get("y", self.y()),
+                    geometry.get("width", self.width()),
+                    geometry.get("height", self.height()),
+                )
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ from typing import Optional, Dict
 import logging
 import json
 import requests
-from bs4 import BeautifulSoup
+import re
 
 # 设置日志配置
 logging.basicConfig(
@@ -117,12 +117,15 @@ class ModelCalculator:
     def _extract_model_size(self, page_content: str, target: str) -> float:
         """从页面内容提取模型大小"""
         logging.debug(f"Extracting model size from page content with target: {target}")
-        soup = BeautifulSoup(page_content, "html.parser")
-        params_el = soup.find("div", {"data-target": target})
-        data_props = params_el["data-props"]
-        size = float(data_props.split('"total":')[1].split(",")[0])
-        logging.debug(f"Extracted model size: {size}")
-        return size
+        # 使用正则表达式替代BeautifulSoup
+        match = re.search(rf'data-target="{target}".*?data-props=".*?total":(\d+)', page_content)
+        if match:
+            size = float(match.group(1))
+            logging.debug(f"Extracted model size: {size}")
+            return size
+        else:
+            logging.error("Failed to extract model size using regex")
+            return 0.0
 
     def calculate_sizes(self) -> Dict[str, float]:
         """计算所有相关的大小"""

@@ -1,9 +1,8 @@
 default: run
 
-build:
-  cd src/native; xmake
-  cp src/native/build/windows/x64/release/native.dll ./
+# build:
+#   cd src/native; xmake
+#   cp src/native/build/windows/x64/release/native.dll ./
 
-run: build
+run:
   python main.py
-

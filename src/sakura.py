@@ -17,7 +17,7 @@ class Sakura(BaseModel):
     filename: str
     sha256: str
     size: float
-    minimal_gpu_memory_gb: int
+    minimal_gpu_memory_gb: int  # NOTE(kuriko): zero means no minimum requirement
     recommended_np: Dict[int, int] = {8: 1, 10: 1, 12: 1, 16: 1, 24: 1}
     download_links: Dict[str, str] = {}
 
@@ -116,12 +116,12 @@ class sakura_list_init:
 
         # FIXME(kuriko): This will add delay (max to 3s) in startup,
         #   we should split the model_list load schema in section_download.py
-        self.SAKURA_LIST = asyncio.run(self.fetch_latest_model_list())
+        self.SAKURA_LIST: Dict[str, Sakura] = asyncio.run(self.fetch_latest_model_list())
 
-    async def fetch_latest_model_list(self):
-        ret_model_list = []
+    async def fetch_latest_model_list(self) -> List[Sakura]:
+        ret_model_list: List[Sakura] = []
         try:
-            model_list = await parallel_download(
+            model_list: ModelList = await parallel_download(
                 self.update_file_mirror_list,
                 json=True,
                 parser=lambda data: ModelList(**data),
@@ -142,7 +142,7 @@ class sakura_list_init:
 
         return ret_model_list
 
-    def __getitem__(self, name):
+    def __getitem__(self, name) -> Sakura:
         for model in self.SAKURA_LIST:
             if model.filename == name:
                 return model

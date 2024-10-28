@@ -1,9 +1,8 @@
 import logging
 import os
-import json
 import math
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QGroupBox
+from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel
 from qfluentwidgets import (
     ComboBox,
     PushButton,
@@ -16,25 +15,25 @@ from qfluentwidgets import (
     Slider,
 )
 
-from .common import CURRENT_DIR, CONFIG_FILE
+from .common import CURRENT_DIR
 from .gpu import GPUManager
 from .sakura import SAKURA_LIST
 from .ui import *
 
 
 class RunServerSection(QFrame):
-    def __init__(self, title, main_window, parent=None):
+    def __init__(self, title, main_window, setting, parent=None):
         super().__init__(parent)
         self.main_window = main_window
+        self.setting = setting
         self.setObjectName(title.replace(" ", "-"))
-        self.title = title
 
         self._init_ui()
-        self.load_presets()
         self.refresh_models()
         self.refresh_gpus()
-        self.load_selected_preset()
-        self.load_advanced_state()  # 新增：加载高级设置状态
+        self.load_presets(setting.presets)
+
+        setting.model_sort_option_changed.connect(self.refresh_models)
 
     def _init_ui(self):
         menu_base = self._create_menu_base()
@@ -57,7 +56,6 @@ class RunServerSection(QFrame):
         self.run_button = PrimaryPushButton(FIF.PLAY, "启动")
 
         buttons_group = UiButtonGroup(
-            UiButton("自动配置", FIF.SETTING, self.auto_configure),
             UiButton("高级设置", FIF.MORE, self.toggle_advanced_settings),
             self.benchmark_button,
             self.run_and_share_button,
@@ -84,19 +82,13 @@ class RunServerSection(QFrame):
         )
 
     def _create_preset_options(self):
-        self.config_preset_combo = EditableComboBox(self)
+        self.config_preset_combo = EditableComboBox()
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
-
-        self.save_preset_button = PushButton(FIF.SAVE, "保存")
-        self.save_preset_button.clicked.connect(self.save_preset)
-
-        self.load_preset_button = PushButton(FIF.SYNC, "刷新")
-        self.load_preset_button.clicked.connect(self.load_presets)
+        self.setting.presets_changed.connect(self.load_presets)
 
         return UiRow(
             (self.config_preset_combo, 1),
-            (self.save_preset_button, 0),
-            (self.load_preset_button, 0),
+            (UiButton("保存", FIF.SAVE, self.save_preset), 0),
         )
 
     def _create_ip_port_log_option(self):
@@ -132,11 +124,19 @@ class RunServerSection(QFrame):
         layout_extra_options.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
 
         self.llamacpp_override = UiLineEdit("覆盖默认llamacpp路径（可选）", "")
-        self.custom_command_append = UiLineEdit("手动追加命令，到UI选择的命令后", "")
 
-        self.custom_command = TextEdit()
-        self.custom_command.setAcceptRichText(False)
-        self.custom_command.setPlaceholderText("手动自定义命令（覆盖UI选择）")
+        self.command_template = TextEdit()
+        self.command_template.setAcceptRichText(False)
+        self.command_template.setPlaceholderText(
+            "\n".join(
+                [
+                    "自定义命令模板，其中",
+                    "- %cmd%会替换成UI生成的完整命令",
+                    "- %cmd_raw%会被替换成UI生成的命令和模型选项，但不包括其他选项",
+                    "双AMD显卡用户，请使用 cmd.exe /c set HIP_VISIBLE_DEVICES='1' `& %cmd% 来指定显卡",
+                ]
+            )
+        )
 
         layout = UiCol(
             UiHLine(),
@@ -145,13 +145,15 @@ class RunServerSection(QFrame):
             self._create_ip_port_log_option(),
             self._create_benchmark_layout(),
             self.llamacpp_override,
-            self.custom_command_append,
-            self.custom_command,
+            self.command_template,
         )
         layout.setContentsMargins(0, 0, 0, 0)  # 确保布局的边距也被移除
-        self.menu_advance = QFrame()
+        self.menu_advance = QFrame(self)
         self.menu_advance.setLayout(layout)
-        self.menu_advance.setVisible(False)
+        if self.setting.remember_advanced_state:
+            self.menu_advance.setVisible(self.setting.advanced_state)
+        else:
+            self.menu_advance.setVisible(False)
         return self.menu_advance
 
     def _create_context_length_layout(self):
@@ -213,7 +215,7 @@ class RunServerSection(QFrame):
         logging.debug(f"找到的模型文件: {models}")
 
         # 从设置中获取排序选项
-        sort_option = self.main_window.settings_section.model_sort_combo.currentText()
+        sort_option = self.setting.model_sort_option
 
         # 根据选择的排序方式对模型列表进行排序
         if sort_option == "修改时间":
@@ -223,17 +225,31 @@ class RunServerSection(QFrame):
         elif sort_option == "文件大小":
             models.sort(key=lambda x: os.path.getsize(x), reverse=True)
 
-        self.model_path.addItems(models)
+        models_shortest = []
+        for abspath in models:
+            # 检查文件是否在当前目录下（不在子目录中）
+            if os.path.dirname(abspath) == CURRENT_DIR:
+                # 如果在当前目录，使用文件名作为相对路径
+                models_shortest.append(os.path.basename(abspath))
+            else:
+                # 计算相对路径和绝对路径
+                abs_path = os.path.abspath(abspath)
+                # 只有在同一个盘符时才计算相对路径
+                if os.path.splitdrive(abspath)[0] == os.path.splitdrive(CURRENT_DIR)[0]:
+                    rel_path = os.path.relpath(abspath, CURRENT_DIR)
+                    # 选择更短的路径
+                    models_shortest.append(rel_path if len(rel_path) < len(abs_path) else abs_path)
+                else:
+                    # 不同盘符时使用绝对路径
+                    models_shortest.append(abs_path)
+
+        self.model_path.addItems(models_shortest)
 
     def _create_gpu_selection_layout(self):
-        layout = QHBoxLayout()
         self.gpu_combo = ComboBox(self)
-        self.manully_select_gpu_index = LineEdit(self)
-        self.manully_select_gpu_index.setPlaceholderText("手动指定GPU索引")
-        self.manully_select_gpu_index.setFixedWidth(140)
-        layout.addWidget(self.gpu_combo)
-        layout.addWidget(self.manully_select_gpu_index)
-        return layout
+        button = UiButton("自动配置", FIF.SETTING, self.auto_configure)
+        button.setFixedWidth(140)
+        return UiRow(self.gpu_combo, button)
 
     def refresh_gpus(self):
         self.gpu_combo.clear()
@@ -339,24 +355,10 @@ class RunServerSection(QFrame):
         if not preset_name:
             MessageBox("错误", "预设名称不能为空", self).exec()
             return
-
-        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
-        if not os.path.exists(config_file_path):
-            with open(config_file_path, "w", encoding="utf-8") as f:
-                json.dump({}, f, ensure_ascii=False, indent=4)
-
-        with open(config_file_path, "r", encoding="utf-8") as f:
-            try:
-                current_settings = json.load(f)
-            except json.JSONDecodeError:
-                current_settings = {}
-
-        preset_section = current_settings.get(self.title, [])
-        new_preset = {
-            "name": preset_name,
-            "config": {
-                "custom_command": self.custom_command.toPlainText(),
-                "custom_command_append": self.custom_command_append.text(),
+        self.setting.set_preset(
+            preset_name,
+            {
+                "custom_command": self.command_template.toPlainText(),
                 "gpu_layers": self.gpu_layers_spinbox.value(),
                 "flash_attention": self.flash_attention_check.isChecked(),
                 "no_mmap": self.no_mmap_check.isChecked(),
@@ -366,112 +368,64 @@ class RunServerSection(QFrame):
                 "n_parallel": self.n_parallel_spinbox.value(),
                 "host": self.host_input.currentText(),
                 "port": self.port_input.text(),
-                "gpu_index": self.manully_select_gpu_index.text(),
                 "npp": self.npp_input.text(),
                 "ntg": self.ntg_input.text(),
                 "npl": self.npl_input.text(),
                 "llamacpp_override": self.llamacpp_override.text(),
             },
-        }
-
-        for i, preset in enumerate(preset_section):
-            if preset["name"] == preset_name:
-                preset_section[i] = new_preset
-                break
-        else:
-            preset_section.append(new_preset)
-
-        current_settings[self.title] = preset_section
-
-        with open(config_file_path, "w", encoding="utf-8") as f:
-            json.dump(current_settings, f, ensure_ascii=False, indent=4)
-
-        self.load_presets(preset_name)  # 传入当前预设名称
+        )
         UiInfoBarSuccess(self, "预设已保存")
 
-    def load_presets(self, current_preset=None):
-        self.config_preset_combo.blockSignals(True)  # 阻止信号触发
+    def load_presets(self, presets):
+        current_preset_name = self.config_preset_combo.currentText()
+
         self.config_preset_combo.clear()
-        presets = self.load_presets_from_file()
-        if not presets or presets == {}:
-            self.config_preset_combo.blockSignals(False)
-            return
-        if self.title in presets:
-            preset_names = [preset["name"] for preset in presets[self.title]]
-            self.config_preset_combo.addItems(preset_names)
-            if current_preset and current_preset in preset_names:
-                self.config_preset_combo.setCurrentText(current_preset)
-            elif preset_names:
-                self.config_preset_combo.setCurrentText(preset_names[0])
-        self.config_preset_combo.blockSignals(False)  # 恢复信号
-        self.load_selected_preset()  # 加载选中的预设
+        preset_names = [preset["name"] for preset in presets]
+        self.config_preset_combo.addItems(preset_names)
+
+        if current_preset_name not in preset_names:
+            self.config_preset_combo.setCurrentText("")
+        else:
+            self.config_preset_combo.setCurrentText(current_preset_name)
 
     def load_selected_preset(self):
         preset_name = self.config_preset_combo.currentText()
-        presets = self.load_presets_from_file()
-        if not presets or presets == {}:
-            return
-        if self.title in presets:
-            for preset in presets[self.title]:
-                if preset["name"] == preset_name:
-                    config = preset["config"]
-                    self.custom_command.setPlainText(config.get("custom_command", ""))
-                    self.custom_command_append.setText(
-                        config.get("custom_command_append", "")
-                    )
-                    self.gpu_layers_spinbox.setValue(config.get("gpu_layers", 200))
-                    self.model_path.setCurrentText(config.get("model_path", ""))
-                    self.context_length_input.setValue(
-                        config.get("context_length", 2048)
-                    )
-                    self.n_parallel_spinbox.setValue(config.get("n_parallel", 1))
-                    self.host_input.setCurrentText(config.get("host", "127.0.0.1"))
-                    self.port_input.setText(config.get("port", "8080"))
-                    self.flash_attention_check.setChecked(
-                        config.get("flash_attention", True)
-                    )
-                    self.npp_input.setText(config.get("npp", "768"))
-                    self.ntg_input.setText(config.get("ntg", "384"))
-                    self.npl_input.setText(config.get("npl", "1,2,4,8,16"))
-                    self.no_mmap_check.setChecked(config.get("no_mmap", True))
-                    self.gpu_combo.setCurrentText(config.get("gpu", ""))
-                    self.manully_select_gpu_index.setText(config.get("gpu_index", ""))
-                    self.llamacpp_override.setText(config.get("llamacpp_override", ""))
-                    self.update_context_per_thread()
-                    break
+        for preset in self.setting.presets:
+            if preset["name"] == preset_name:
+                config = preset["config"]
 
-    def load_presets_from_file(self):
-        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
-        if os.path.exists(config_file_path):
-            with open(config_file_path, "r", encoding="utf-8") as f:
-                try:
-                    return json.load(f) or {}
-                except json.JSONDecodeError:
-                    return {}
-        return {}
+                self.command_template.setPlainText(config.get("command_template", ""))
+                if self.command_template == "":
+                    cmd1 = config.get("custom_command", "")
+                    cmd2 = config.get("custom_command_append", "")
+                    if cmd1 != "":
+                        self.command_template = "%cmd_raw% " + cmd1
+                    elif cmd2 != "":
+                        self.command_template = "%cmd% " + cmd2
+
+                self.gpu_layers_spinbox.setValue(config.get("gpu_layers", 200))
+                self.model_path.setCurrentText(config.get("model_path", ""))
+                self.context_length_input.setValue(config.get("context_length", 2048))
+                self.n_parallel_spinbox.setValue(config.get("n_parallel", 1))
+                self.host_input.setCurrentText(config.get("host", "127.0.0.1"))
+                self.port_input.setText(config.get("port", "8080"))
+                self.flash_attention_check.setChecked(
+                    config.get("flash_attention", True)
+                )
+                self.npp_input.setText(config.get("npp", "768"))
+                self.ntg_input.setText(config.get("ntg", "384"))
+                self.npl_input.setText(config.get("npl", "1,2,4,8,16"))
+                self.no_mmap_check.setChecked(config.get("no_mmap", True))
+                self.gpu_combo.setCurrentText(config.get("gpu", ""))
+                self.llamacpp_override.setText(config.get("llamacpp_override", ""))
+                self.update_context_per_thread()
+                break
 
     def toggle_advanced_settings(self):
         new_state = not self.menu_advance.isVisible()
         self.menu_advance.setVisible(new_state)
-        if self.main_window.settings_section.remember_advanced_state.isChecked():
-            self.save_advanced_state()
+        if self.setting.remember_advanced_state:
+            self.setting.advanced_state = new_state
+            self.setting.save_settings()
 
-    def load_advanced_state(self):
-        config_file_path = os.path.join(CURRENT_DIR, CONFIG_FILE)
-        try:
-            with open(config_file_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            if (
-                config.get("remember_advanced_state", False)
-                and self.main_window.settings_section.remember_advanced_state.isChecked()
-            ):
-                self.menu_advance.setVisible(config.get("advanced_state", False))
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
 
-    def save_advanced_state(self):
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            config_data = json.load(f)
-            config_data["advanced_state"] = self.menu_advance.isVisible()
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config_data, f, ensure_ascii=False, indent=4)

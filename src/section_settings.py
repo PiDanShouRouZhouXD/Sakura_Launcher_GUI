@@ -11,7 +11,7 @@ from qfluentwidgets import (
 )
 import requests
 
-from .common import CONFIG_FILE, SAKURA_LAUNCHER_GUI_VERSION
+from .common import SAKURA_LAUNCHER_GUI_VERSION
 from .ui import *
 
 
@@ -167,11 +167,11 @@ class SettingsSection(QFrame):
     sig_need_update = Signal(str)
     handler = LogHandler()
 
-    def __init__(self, title, parent=None):
+    def __init__(self, title, setting, parent=None):
         super().__init__(parent)
+        self.setting = setting
         self.setObjectName(title.replace(" ", "-"))
         self._init_ui()
-        self.load_settings()
 
     def _init_ui(self):
         self.setLayout(
@@ -185,56 +185,73 @@ class SettingsSection(QFrame):
     def _create_setting_section(self):
         self.check_launcher_update()
 
-        def save_base_settings():
-            settings = {
-                "llamacpp_path": self.llamacpp_path.text(),
-                "model_search_paths": self.model_search_paths.toPlainText().split("\n"),
-                "remember_window_state": self.remember_window_state.isChecked(),
-                "model_sort_option": self.model_sort_combo.currentText(),
-                "remember_advanced_state": self.remember_advanced_state.isChecked(),
-                "no_gpu_ability_check": self.no_gpu_ability_check.isChecked(),
-            }
-            self.save_settings(settings)
-
         button_group = UiButtonGroup(
             UiButton("更新版本", FIF.UPDATE, self.update_launcher),
-            UiButton("加载设置", FIF.SYNC, self.load_settings),
-            UiButton("保存设置", FIF.SAVE, save_base_settings, primary=True),
         )
 
-        self.remember_window_state = UiCheckBox("记住窗口位置和大小", False)
-        self.remember_advanced_state = UiCheckBox("记住高级设置状态", False)
-        self.no_gpu_ability_check = UiCheckBox("关闭 GPU 能力检测", False)
-        self.model_sort_combo = UiComboBox(["修改时间", "文件名", "文件大小"])
-        self.llamacpp_path = UiLineEdit("可选，手动指定llama.cpp路径", "")
-
-        self.model_search_paths = TextEdit(self)
-        self.model_search_paths.setPlaceholderText(
+        remember_window_state = UiCheckBox(
+            "记住窗口位置和大小", self.setting.remember_window_state
+        )
+        remember_window_state.toggled.connect(
+            lambda checked: self.setting.set_value("remember_window_state", checked)
+        )
+        remember_advanced_state = UiCheckBox(
+            "记住高级设置状态", self.setting.remember_advanced_state
+        )
+        remember_advanced_state.toggled.connect(
+            lambda checked: self.setting.set_value("remember_advanced_state", checked)
+        )
+        no_gpu_ability_check = UiCheckBox(
+            "关闭 GPU 能力检测", self.setting.no_gpu_ability_check
+        )
+        no_gpu_ability_check.toggled.connect(
+            lambda checked: self.setting.set_value("no_gpu_ability_check", checked)
+        )
+        model_sort_combo = UiComboBox(["修改时间", "文件名", "文件大小"])
+        model_sort_combo.setCurrentText(self.setting.model_sort_option)
+        model_sort_combo.currentTextChanged.connect(
+            lambda text: self.setting.set_value("model_sort_option", text)
+        )
+        llamacpp_path = UiLineEdit(
+            "可选，手动指定llama.cpp路径", self.setting.llamacpp_path
+        )
+        llamacpp_path.textChanged.connect(
+            lambda text: self.setting.set_value("llamacpp_path", text)
+        )
+        model_search_paths = TextEdit()
+        model_search_paths.setPlaceholderText(
             "模型搜索路径（每行一个路径，已经默认包含当前目录）"
+        )
+        model_search_paths.setPlainText(self.setting.model_search_paths)
+        model_search_paths.textChanged.connect(
+            lambda: self.setting.set_value(
+                "model_search_paths", model_search_paths.toPlainText()
+            )
         )
 
         return UiCol(
             button_group,
-            self.remember_window_state,
-            self.remember_advanced_state,
-            self.no_gpu_ability_check,
-            UiOptionRow("模型列表排序", self.model_sort_combo),
-            UiOptionRow("llama.cpp文件夹", self.llamacpp_path),
-            UiOptionCol("模型搜索路径", self.model_search_paths),
+            remember_window_state,
+            remember_advanced_state,
+            no_gpu_ability_check,
+            UiOptionRow("模型列表排序", model_sort_combo),
+            UiOptionRow("llama.cpp文件夹", llamacpp_path),
+            UiOptionCol("模型搜索路径", model_search_paths),
         )
 
     def _create_config_editor_section(self):
         self.config_table = ConfigEditor()
 
         def save_run_setting():
-            server_configs = self.config_table.get_config()
-            settings = {"运行": server_configs}
-            self.save_settings(settings)
+            presets = self.config_table.get_config()
+            self.setting.set_value("presets", presets)
 
         button_group = UiButtonGroup(
-            UiButton("加载配置预设", FIF.SYNC, self.load_settings),
             UiButton("保存配置预设", FIF.SAVE, save_run_setting, primary=True),
         )
+
+        self.setting.presets_changed.connect(self.config_table.set_config)
+        self.config_table.set_config(self.setting.presets)
 
         return UiCol(
             button_group,
@@ -287,47 +304,3 @@ class SettingsSection(QFrame):
         thread = CheckUpdateThread(self)
         thread.sig_version.connect(notify_need_update)
         thread.start()
-
-    def save_settings(self, settings):
-        if not os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump({}, f, ensure_ascii=False, indent=4)
-
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            try:
-                current_settings = json.load(f)
-            except json.JSONDecodeError:
-                current_settings = {}
-
-        current_settings.update(settings)
-
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(current_settings, f, ensure_ascii=False, indent=4)
-
-        UiInfoBarSuccess(self, f"设置已保存")
-
-    def load_settings(self):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-        except FileNotFoundError:
-            return
-        except json.JSONDecodeError:
-            return
-        self.llamacpp_path.setText(settings.get("llamacpp_path", ""))
-        self.model_search_paths.setPlainText(
-            "\n".join(settings.get("model_search_paths", []))
-        )
-        self.remember_window_state.setChecked(
-            settings.get("remember_window_state", True)
-        )
-        self.model_sort_combo.setCurrentText(
-            settings.get("model_sort_option", "修改时间")
-        )
-        self.remember_advanced_state.setChecked(
-            settings.get("remember_advanced_state", True)
-        )
-        self.no_gpu_ability_check.setChecked(
-            settings.get("no_gpu_ability_check", False)
-        )
-        self.config_table.set_config(settings.get("运行", []))

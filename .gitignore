@@ -5,7 +5,5 @@ __pycache__
 /Release
 llama
 sakura-launcher_config.json
-main.spec
 *.gguf
 *.log
-native.dll

@@ -1,62 +1,15 @@
-import re
-import csv
 import os
-import subprocess
-import logging
-from dataclasses import dataclass
-from typing import List, Dict, Optional
-from enum import IntEnum
+import platform
 import math
+import logging
+import subprocess
+from typing import List, Dict
 
-from .sakura import SAKURA_LIST, Sakura
-from . import utils
+from .sakura import SAKURA_LIST
+from .utils import BytesToGiB
+from .utils.gpu import GPUAbility, GPUType, GPUInfo
+from .utils.gpu.nvidia import get_nvidia_gpus
 
-@dataclass
-class GPUDesc:
-    name: str
-    dedicated_gpu_memory: int
-    dedicated_system_memory: int
-    shared_system_memory: int
-
-    # not implemented for now
-    current_gpu_memory_usage: int
-
-
-@dataclass
-class GPUAbility:
-    is_capable: bool = True  # Not recommend to use
-
-    # If is_fatal is set, the GPU will be disabled totally
-    is_fatal: bool = False
-
-    reason: str = ""
-
-
-class GPUType(IntEnum):
-    NVIDIA = 1
-    AMD = 2
-    INTEL = 3
-    UNKNOWN = 255
-
-
-@dataclass
-class GPUInfo:
-    # NOTE(kuriko): reserved for future use,
-    #    typeially this is for CUDA_VISIABLE_DEVICES or HIP_VISIBLE_DEVICES
-    index: int|None
-
-    name: str
-    gpu_type: GPUType
-
-    # All memories are in bytes
-    dedicated_gpu_memory: int
-    dedicated_system_memory: int|None = None
-    shared_system_memory: int|None = None
-
-    # 当前可用显存
-    avail_dedicated_gpu_memory: int|None = None
-
-    ability: GPUAbility|None = None
 
 
 class GPUManager:
@@ -71,11 +24,11 @@ class GPUManager:
 
     def detect_gpus(self):
         ''' platform-specific method to detect GPUs  '''
-        if os.name == "nt":
+        if platform.system() == "Windows":
             self.detect_gpus_windows()
+        elif platform.system() == "Linux":
+            self.detect_gpus_linux()
         else:
-            self.nvidia_gpus = []
-            self.amd_gpus = []
             logging.warning("Disable GPU detection on non-windows platform")
 
     def __add_gpu_to_list(self, gpu_info: GPUInfo):
@@ -85,6 +38,21 @@ class GPUManager:
             self.amd_gpus.append(gpu_info.name)
         elif gpu_info.gpu_type == GPUType.INTEL:
             self.intel_gpus.append(gpu_info.name)
+
+    def __universal_detect_nvidia_gpu(self):
+        ''' Detect NVIDIA GPUs using nvidia-smi '''
+        self.nvidia_gpus = []
+        nvidia_gpu_info = get_nvidia_gpus()
+        for gpu_info in nvidia_gpu_info:
+            name = gpu_info.name
+            self.nvidia_gpus.append(name)
+            if name in self.gpu_info_map:
+                self.gpu_info_map[name].merge_from(gpu_info)
+                logging.info(f"更新 GPU 信息: {self.gpu_info_map[name]}")
+
+    def detect_gpus_linux(self):
+        self.__universal_detect_nvidia_gpu()
+        return
 
     def detect_gpus_windows(self):
         # Non stable gpu detection
@@ -117,33 +85,7 @@ class GPUManager:
             logging.warning(f"detect_gpus_properties() 出错: {str(e)}")
 
         # 检测NVIDIA GPU
-        try:
-            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-            result = subprocess.run(
-                "nvidia-smi --query-gpu=name,memory.free --format=csv,noheader",
-                shell=True,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                output = result.stdout.splitlines()
-                # NOTE(kuriko): replace nvidia_gpu list to a more stable output from nvidia-smi
-                self.nvidia_gpus = []
-                for row in csv.reader(output, delimiter=","):
-                    name, memory_free = row
-                    name = name.strip()
-                    self.nvidia_gpus.append(name)
-
-                    try:
-                        # NOTE(kuriko): nvidia-smi should return MiB
-                        memory_free = int(memory_free.replace(" MiB", ""))
-                        if name in self.gpu_info_map:
-                            self.gpu_info_map[name].avail_dedicated_gpu_memory = utils.MiBToBytes(memory_free)
-                    except Exception as e:
-                        logging.error(f"Error when parsing nvidia-smi output: {e}")
-
-        except Exception as e:
-            logging.error(f"检测NVIDIA GPU时出错: {str(e)}")
+        self.__universal_detect_nvidia_gpu()
 
         # 检测AMD GPU
         try:
@@ -184,13 +126,13 @@ class GPUManager:
 
         if gpu_info.avail_dedicated_gpu_memory is not None:
             gpu_mem = gpu_info.avail_dedicated_gpu_memory
-            gpu_mem_gb = utils.BytesToGiB(gpu_mem)
+            gpu_mem_gb = BytesToGiB(gpu_mem)
             err_msg_if_gpu_mem_insufficient = f"当前系统只有 {gpu_mem_gb:.2f} GiB 剩余显存"
         else:
             # 大于1GiB时向上取整，针对非精确显存容量
             gpu_mem = gpu_info.dedicated_gpu_memory
-            gpu_mem_gb = math.ceil(utils.BytesToGiB(gpu_mem)) \
-                if gpu_mem > (2**30) else utils.BytesToGiB(gpu_mem)
+            gpu_mem_gb = math.ceil(BytesToGiB(gpu_mem)) \
+                if gpu_mem > (2**30) else BytesToGiB(gpu_mem)
             err_msg_if_gpu_mem_insufficient = f"当前显卡总显存为 {gpu_mem_gb:.2f} GiB"
 
         model = SAKURA_LIST[model_name]

@@ -103,3 +103,6 @@ class Setting(QObject):
         # 兼容 v1.0.0-beta
         if type(self.model_search_paths) == list:
             self.model_search_paths = "\n".join(self.model_search_paths)
+
+
+SETTING = Setting()

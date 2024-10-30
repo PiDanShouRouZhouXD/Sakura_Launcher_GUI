@@ -32,9 +32,10 @@ from qfluentwidgets import (
     TableWidget,
 )
 
-from .sakura_share_api import SakuraShareAPI
-from .ui import *
 from .common import CLOUDFLARED, get_resource_path
+from .sakura_share_api import SakuraShareAPI
+from .setting import SETTING
+from .ui import *
 
 
 class AsyncWorker(QRunnable):
@@ -60,10 +61,9 @@ class AsyncWorker(QRunnable):
 
 
 class CFShareSection(QFrame):
-    def __init__(self, title, main_window, setting, parent=None):
+    def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
-        self.setting = setting
         self.setObjectName(title.replace(" ", "-"))
         self.title = title
 
@@ -139,10 +139,10 @@ class CFShareSection(QFrame):
             )
         )
 
-        self.worker_url_input = UiLineEdit("输入WORKER_URL", self.setting.worker_url)
+        self.worker_url_input = UiLineEdit("输入WORKER_URL", SETTING.worker_url)
         layout.addLayout(UiOptionRow("链接", self.worker_url_input))
         self.worker_url_input.textChanged.connect(
-            lambda text: self.setting.set_value("worker_url", text.strip())
+            lambda text: SETTING.set_value("worker_url", text.strip())
         )
 
         self.tg_token_input = UiLineEdit("可选，从@SakuraShareBot获取，用于统计贡献")

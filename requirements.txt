@@ -5,7 +5,6 @@ requests
 py7zr
 
 aiohttp
-pydantic
 
 # for dist packing
 pyinstaller

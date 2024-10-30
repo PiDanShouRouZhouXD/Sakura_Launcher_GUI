@@ -1,6 +1,35 @@
 {
-    "created_at": "1729616540",
-    "models": [
+    "llamacpp": [
+        {
+            "repo": "ggerganov/llama.cpp/releases/download/b3923",
+            "filename": "llama-b3923-bin-win-cuda-cu12.2.0-x64.zip",
+            "version": "b3923-CUDA",
+            "gpu": "Nvidia独显",
+            "require_cuda": true
+        },
+        {
+            "repo": "PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha",
+            "filename": "llama-b3384-bin-win-rocm-avx2-x64.zip",
+            "version": "b3384-ROCm",
+            "gpu": "部分AMD独显",
+            "require_cuda": false
+        },
+        {
+            "repo": "PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/v0.0.3-alpha",
+            "filename": "llama-b3534-bin-win-rocm-avx512-x64.zip",
+            "version": "b3534-ROCm-780m",
+            "gpu": "部分AMD核显",
+            "require_cuda": false
+        },
+        {
+            "repo": "ggerganov/llama.cpp/releases/download/b3923",
+            "filename": "llama-b3923-bin-win-vulkan-x64.zip",
+            "version": "b3923-Vulkan",
+            "gpu": "通用，不推荐",
+            "require_cuda": false
+        }
+    ],
+    "sakura": [
         {
             "repo": "GalTransl-7B-v2.6",
             "filename": "GalTransl-7B-v2.6-IQ4_XS.gguf",

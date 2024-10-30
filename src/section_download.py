@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 import os
+import json
 import requests
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import (
@@ -67,6 +68,20 @@ class RefreshLatestThread(QThread):
     on_success = Signal()
 
     def run(self):
+        DATA_FILE = "data.json"
+        with open(os.path.join(DATA_FILE), "r", encoding="utf-8") as f:
+            data_json = json.load(f)
+        SAKURA_LIST.update_sakura_list(data_json)
+
+        try:
+            username = "PiDanShouRouZhouXD"
+            data_json = requests.get(
+                f"https://ghp.ci/https://raw.githubusercontent.com/{username}/Sakura_Launcher_GUI/refs/heads/main/data.json"
+            ).json()
+            SAKURA_LIST.update_sakura_list(data_json)
+        except Exception as e:
+            logging.warning(f"获取远程Sakura列表失败:{e}")
+
         try:
             get_latest_cuda_release()
             self.on_success.emit()
@@ -165,7 +180,7 @@ class DownloadThread(QThread):
 
 class DownloadSection(QFrame):
     llamacpp_download_src = "GHProxy"
-    sakura_download_src = "HFMirror"
+    sakura_download_src = SAKURA_LIST.DOWNLOAD_SRC[0]
     download_tasks: List[DownloadTask] = []
     download_threads: List[QThread] = []
 
@@ -183,6 +198,22 @@ class DownloadSection(QFrame):
             ),
         )
 
+    def refresh_sakura_table(self, sakura_list):
+        table = self.sakura_table
+
+        def create_button(sakura: Sakura):
+            download_fn = lambda: self.start_download_sakura(sakura)
+            button = UiDownloadButton(download_fn)
+            return button
+
+        table.clearContents()
+        for row, sakura in enumerate(sakura_list):
+            if table.rowCount() <= row:
+                table.insertRow(row)
+            table.setItem(row, 0, UiTableLabel(sakura.filename))
+            table.setItem(row, 1, UiTableLabel(f"{sakura.size}GB"))
+            table.setCellWidget(row, 2, create_button(sakura))
+
     def _create_sakura_download_section(self):
         def on_src_change(text):
             self.sakura_download_src = text
@@ -192,20 +223,9 @@ class DownloadSection(QFrame):
             None,
             UiComboBox(SAKURA_LIST.DOWNLOAD_SRC, on_src_change),
         )
-        on_src_change(SAKURA_LIST.DOWNLOAD_SRC[0])
 
-        def create_button(sakura: Sakura):
-            download_fn = lambda: self.start_download_sakura(sakura)
-            button = UiDownloadButton(download_fn)
-            return button
-
-        table = UiTable(["名称", "大小", "操作"])
-        for sakura in SAKURA_LIST:
-            row = table.rowCount()
-            table.insertRow(row)
-            table.setItem(row, 0, UiTableLabel(sakura.filename))
-            table.setItem(row, 1, UiTableLabel(f"{sakura.size}GB"))
-            table.setCellWidget(row, 2, create_button(sakura))
+        self.sakura_table = UiTable(["名称", "大小", "操作"])
+        SAKURA_LIST.sakura_list_changed.connect(self.refresh_sakura_table)
 
         description = UiDescription(
             """
@@ -219,7 +239,7 @@ class DownloadSection(QFrame):
             description,
             UiHLine(),
             comboBox,
-            table,
+            self.sakura_table,
         )
 
     def refresh_llamacpp_table(self):

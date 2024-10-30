@@ -1,6 +1,4 @@
 import logging
-import os
-import json
 from PySide6.QtCore import Qt, Signal, QObject, QTimer, QThread
 from PySide6.QtWidgets import QFrame, QHeaderView, QTableWidgetItem
 from qfluentwidgets import (
@@ -12,6 +10,7 @@ from qfluentwidgets import (
 import requests
 
 from .common import SAKURA_LAUNCHER_GUI_VERSION
+from .setting import SETTING
 from .ui import *
 
 
@@ -167,9 +166,8 @@ class SettingsSection(QFrame):
     sig_need_update = Signal(str)
     handler = LogHandler()
 
-    def __init__(self, title, setting, parent=None):
+    def __init__(self, title, parent=None):
         super().__init__(parent)
-        self.setting = setting
         self.setObjectName(title.replace(" ", "-"))
         self._init_ui()
 
@@ -190,41 +188,39 @@ class SettingsSection(QFrame):
         )
 
         remember_window_state = UiCheckBox(
-            "记住窗口位置和大小", self.setting.remember_window_state
+            "记住窗口位置和大小", SETTING.remember_window_state
         )
         remember_window_state.toggled.connect(
-            lambda checked: self.setting.set_value("remember_window_state", checked)
+            lambda checked: SETTING.set_value("remember_window_state", checked)
         )
         remember_advanced_state = UiCheckBox(
-            "记住高级设置状态", self.setting.remember_advanced_state
+            "记住高级设置状态", SETTING.remember_advanced_state
         )
         remember_advanced_state.toggled.connect(
-            lambda checked: self.setting.set_value("remember_advanced_state", checked)
+            lambda checked: SETTING.set_value("remember_advanced_state", checked)
         )
         no_gpu_ability_check = UiCheckBox(
-            "关闭 GPU 能力检测", self.setting.no_gpu_ability_check
+            "关闭 GPU 能力检测", SETTING.no_gpu_ability_check
         )
         no_gpu_ability_check.toggled.connect(
-            lambda checked: self.setting.set_value("no_gpu_ability_check", checked)
+            lambda checked: SETTING.set_value("no_gpu_ability_check", checked)
         )
         model_sort_combo = UiComboBox(["修改时间", "文件名", "文件大小"])
-        model_sort_combo.setCurrentText(self.setting.model_sort_option)
+        model_sort_combo.setCurrentText(SETTING.model_sort_option)
         model_sort_combo.currentTextChanged.connect(
-            lambda text: self.setting.set_value("model_sort_option", text)
+            lambda text: SETTING.set_value("model_sort_option", text)
         )
-        llamacpp_path = UiLineEdit(
-            "可选，手动指定llama.cpp路径", self.setting.llamacpp_path
-        )
+        llamacpp_path = UiLineEdit("可选，手动指定llama.cpp路径", SETTING.llamacpp_path)
         llamacpp_path.textChanged.connect(
-            lambda text: self.setting.set_value("llamacpp_path", text)
+            lambda text: SETTING.set_value("llamacpp_path", text)
         )
         model_search_paths = TextEdit()
         model_search_paths.setPlaceholderText(
             "模型搜索路径（每行一个路径，已经默认包含当前目录）"
         )
-        model_search_paths.setPlainText(self.setting.model_search_paths)
+        model_search_paths.setPlainText(SETTING.model_search_paths)
         model_search_paths.textChanged.connect(
-            lambda: self.setting.set_value(
+            lambda: SETTING.set_value(
                 "model_search_paths", model_search_paths.toPlainText()
             )
         )
@@ -244,14 +240,14 @@ class SettingsSection(QFrame):
 
         def save_run_setting():
             presets = self.config_table.get_config()
-            self.setting.set_value("presets", presets)
+            SETTING.set_value("presets", presets)
 
         button_group = UiButtonGroup(
             UiButton("保存配置预设", FIF.SAVE, save_run_setting, primary=True),
         )
 
-        self.setting.presets_changed.connect(self.config_table.set_config)
-        self.config_table.set_config(self.setting.presets)
+        SETTING.presets_changed.connect(self.config_table.set_config)
+        self.config_table.set_config(SETTING.presets)
 
         return UiCol(
             button_group,

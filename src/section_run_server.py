@@ -253,7 +253,10 @@ class RunServerSection(QFrame):
         button.setFixedWidth(140)
         return UiRow(self.gpu_combo, button)
 
-    def refresh_gpus(self):
+    def refresh_gpus(self, keep_selected=False):
+        # 保存当前选择的GPU
+        current_gpu = self.gpu_combo.currentText() if keep_selected else None
+        
         self.gpu_combo.clear()
         self.nvidia_gpus = self.main_window.gpu_manager.nvidia_gpus
         self.amd_gpus = self.main_window.gpu_manager.amd_gpus
@@ -270,6 +273,14 @@ class RunServerSection(QFrame):
             logging.warning("未检测到NVIDIA或AMD GPU")
 
         self.gpu_combo.addItems(["自动"])
+        
+        # 如果需要保持选择，尝试恢复之前的选择
+        if keep_selected and current_gpu:
+            index = self.gpu_combo.findText(current_gpu)
+            if index >= 0:
+                self.gpu_combo.setCurrentIndex(index)
+            else:
+                self.gpu_combo.setCurrentText("自动")
 
     def context_to_slider(self, context):
         min_value = math.log(256)

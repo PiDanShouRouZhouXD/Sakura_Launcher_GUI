@@ -322,7 +322,7 @@ class MainWindow(MSFluentWindow):
 
     def refresh_gpus(self):
         self.gpu_manager.detect_gpus()
-        self.run_server_section.refresh_gpus()
+        self.run_server_section.refresh_gpus(keep_selected=True)
 
         if not self.gpu_manager.nvidia_gpus and not self.gpu_manager.amd_gpus:
             logging.info("未检测到NVIDIA或AMD GPU")

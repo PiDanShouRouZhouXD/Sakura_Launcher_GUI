@@ -72,15 +72,20 @@ class LoadDataThread(QThread):
         SAKURA_LIST.update_sakura_list(data_json)
         LLAMACPP_LIST.update_llamacpp_list(data_json)
 
-        try:
-            username = "PiDanShouRouZhouXD"
-            data_json = requests.get(
-                f"https://ghp.ci/https://raw.githubusercontent.com/{username}/Sakura_Launcher_GUI/refs/heads/main/data.json"
-            ).json()
-            SAKURA_LIST.update_sakura_list(data_json)
-            LLAMACPP_LIST.update_llamacpp_list(data_json)
-        except Exception as e:
-            logging.warning(f"获取远程数据失败:{e}")
+        repo = "PiDanShouRouZhouXD/Sakura_Launcher_GUI"
+        for link in [
+            f"https://ghp.ci/https://raw.githubusercontent.com/{repo}/refs/heads/main/{DATA_FILE}",
+            f"https://cdn.jsdelivr.net/gh/{repo}@main/{DATA_FILE}",
+            f"https://cdn.rawgit.com/{repo}/refs/heads/main/{DATA_FILE}",
+            f"https://raw.githubusercontent.com/{repo}/refs/heads/main/{DATA_FILE}",
+        ]:
+            try:
+                data_json = requests.get(link, timeout=1).json()
+                SAKURA_LIST.update_sakura_list(data_json)
+                LLAMACPP_LIST.update_llamacpp_list(data_json)
+                break
+            except Exception as e:
+                logging.warning(f"获取远程数据失败: {link} {e}")
 
 
 class DownloadTaskState(Enum):

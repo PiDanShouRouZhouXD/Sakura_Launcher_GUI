@@ -21,7 +21,7 @@ from qfluentwidgets import (
 
 from .common import CURRENT_DIR
 from .llamacpp import *
-from .sakura import SAKURA_DOWNLOAD_SRC, SAKURA_LIST, Sakura
+from .sakura import SAKURA_LIST, Sakura
 from .ui import *
 
 
@@ -190,9 +190,9 @@ class DownloadSection(QFrame):
         comboBox = UiRow(
             QLabel("下载源"),
             None,
-            UiComboBox(SAKURA_DOWNLOAD_SRC, on_src_change),
+            UiComboBox(SAKURA_LIST.DOWNLOAD_SRC, on_src_change),
         )
-        on_src_change(SAKURA_DOWNLOAD_SRC[0])
+        on_src_change(SAKURA_LIST.DOWNLOAD_SRC[0])
 
         def create_button(sakura: Sakura):
             download_fn = lambda: self.start_download_sakura(sakura)

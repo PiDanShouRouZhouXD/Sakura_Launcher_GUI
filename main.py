@@ -140,6 +140,114 @@ class MainWindow(MSFluentWindow):
     def run_llamacpp_batch_bench(self):
         self._run_llamacpp("llama-batched-bench")
 
+    def check_gpu_ability(self, selected_gpu, model_name, context_length, n_parallel):
+        """检查GPU能力"""
+        try:
+            check_result = self.gpu_manager.check_gpu_ability(
+                selected_gpu,
+                model_name,
+                context_length,
+                n_parallel,
+            )
+            if not check_result.is_capable and not SETTING.no_gpu_ability_check:
+                if check_result.is_fatal:
+                    MessageBox(
+                        "致命错误：GPU 不满足强制需求",
+                        f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
+                        f"原因：{check_result.reason}\n\n"
+                        f"注：GPU能力检测对话框可以在设置中关闭",
+                        self,
+                    ).exec()
+                    return False
+                else:
+                    box = MessageBox(
+                        "警告：GPU 不满足运行最低需求",
+                        f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
+                        f"原因：{check_result.reason}\n\n"
+                        f"你可以继续使用，但是运行可能发生异常\n\n"
+                        f"注：GPU能力检测对话框可以在设置中关闭",
+                        self,
+                    )
+                    is_quit = False
+
+                    def on_yes():
+                        nonlocal is_quit
+                        is_quit = False
+
+                    def on_cancel():
+                        nonlocal is_quit
+                        is_quit = True
+
+                    box.yesSignal.connect(on_yes)
+                    box.cancelSignal.connect(on_cancel)
+                    box.yesButton.setText("无视风险继续！")
+                    box.cancelButton.setText("停止")
+                    box.exec()
+                    return not is_quit
+        except Exception as e:
+            logging.info(f"检查GPU能力时出错: {str(e)}")
+            MessageBox("错误", f"检查GPU能力时出错: {str(e)}", self).exec()
+            return False
+        return True
+
+    def check_context_per_thread(self, context_length, n_parallel):
+        """检查每线程上下文长度"""
+        context_per_thread = context_length // n_parallel
+        if context_per_thread < 1024 and not SETTING.no_context_check:
+            box = MessageBox(
+                "警告：每线程上下文长度过小",
+                f"当前每个线程的上下文长度为 {context_per_thread}，\n"
+                f"小于推荐的最小值 1024。\n\n"
+                f"这可能会导致模型无法正常使用。建议：\n"
+                f"1. 增加总上下文长度\n"
+                f"2. 减少并发数量\n"
+                f"3. 点击「自动配置」按钮进行自动优化，然后继续\n（仅支持「下载」页面中的模型）\n\n"
+                f"注：此警告可以在设置中关闭",
+                self
+            )
+            is_quit = False
+
+            def on_yes():
+                nonlocal is_quit
+                is_quit = False
+
+            def on_cancel():
+                nonlocal is_quit
+                is_quit = True
+
+            def on_auto_config():
+                nonlocal is_quit
+                is_quit = True
+                # 调用 RunServerSection 的自动配置功能
+                self.run_server_section.auto_configure()
+
+            box.yesSignal.connect(on_yes)
+            box.cancelSignal.connect(on_cancel)
+            
+            # 创建自动配置按钮并添加到buttonGroup
+            from qfluentwidgets import PushButton
+            auto_config_button = PushButton("自动配置", box)
+            auto_config_button.clicked.connect(on_auto_config)
+            box.buttonGroup.layout().insertWidget(1, auto_config_button)  # 插入到yes和cancel按钮之间
+            
+            box.yesButton.setText("继续")
+            box.cancelButton.setText("停止")
+            box.exec()
+            return not is_quit
+        return True
+
+    def check_launch_requirements(self, selected_gpu, model_name, context_length, n_parallel):
+        """检查启动要求"""
+        # 检查GPU能力
+        if not self.check_gpu_ability(selected_gpu, model_name, context_length, n_parallel):
+            return False
+            
+        # 检查每线程上下文长度
+        if not self.check_context_per_thread(context_length, n_parallel):
+            return False
+            
+        return True
+
     def _run_llamacpp(self, executable):
         section = self.run_server_section
 
@@ -157,6 +265,20 @@ class MainWindow(MSFluentWindow):
         model_path = self._add_quotes(section.model_path.currentText())
         logging.info(f"模型路径: {model_path}")
         logging.info(f"模型名称: {model_name}")
+
+        # 将GPU检查提前到这里
+        if section.gpu_combo.currentText() != "自动":
+            selected_gpu = section.gpu_combo.currentText()
+            selected_index = section.gpu_combo.currentIndex()
+
+            # 检查启动要求
+            if not self.check_launch_requirements(
+                selected_gpu,
+                model_name,
+                section.context_length_input.value(),
+                section.n_parallel_spinbox.value()
+            ):
+                return
 
         # 判断使用哪个可执行文件
         executable_path = os.path.join(llamacpp_path, f"{executable}{exe_extension}")
@@ -209,62 +331,13 @@ class MainWindow(MSFluentWindow):
         command = command_template
 
         env = os.environ.copy()
-        if section.gpu_combo.currentText() != "自动":
-            selected_gpu = section.gpu_combo.currentText()
-            selected_index = section.gpu_combo.currentIndex()
 
-            try:
-                check_result = self.gpu_manager.check_gpu_ability(
-                    selected_gpu,
-                    model_name,
-                    section.context_length_input.value(),
-                    section.n_parallel_spinbox.value(),
-                )
-                if (
-                    not check_result.is_capable
-                    and not SETTING.no_gpu_ability_check
-                ):
-                    if check_result.is_fatal:
-                        MessageBox(
-                            "致命错误：GPU 不满足强制需求",
-                            f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
-                            f"原因：{check_result.reason}\n\n"
-                            f"注：GPU能力检测对话框可以在设置中关闭",
-                            self,
-                        ).exec()
-                        return
-                    else:
-                        box = MessageBox(
-                            "警告：GPU 不满足运行最低需求",
-                            f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
-                            f"原因：{check_result.reason}\n\n"
-                            f"你可以继续使用，但是运行可能发生异常\n\n"
-                            f"注：GPU能力检测对话框可以在设置中关闭",
-                            self,
-                        )
-                        is_quit = False
-
-                        def on_yes():
-                            nonlocal is_quit
-                            is_quit = False
-
-                        def on_cancel():
-                            nonlocal is_quit
-                            is_quit = True
-
-                        box.yesSignal.connect(on_yes)
-                        box.cancelSignal.connect(on_cancel)
-                        box.yesButton.setText("无视风险继续！")
-                        box.cancelButton.setText("停止")
-                        box.exec()
-                        if is_quit:
-                            return
-
-                self.gpu_manager.set_gpu_env(env, selected_gpu, selected_index)
-            except Exception as e:
-                logging.info(f"设置GPU环境变量时出错: {str(e)}")
-                MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
-                return
+        try:
+            self.gpu_manager.set_gpu_env(env, selected_gpu, selected_index)
+        except Exception as e:
+            logging.info(f"设置GPU环境变量时出错: {str(e)}")
+            MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
+            return
 
         logging.info(f"执行命令: {command}")
 

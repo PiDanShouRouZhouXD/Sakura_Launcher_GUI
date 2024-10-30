@@ -5,9 +5,9 @@ from typing import Dict, Optional
 from hashlib import sha256
 import requests
 
-from .utils.model_size_cauculator import ModelCalculator, ModelConfig
+from PySide6.QtCore import QObject, Signal
 
-SAKURA_DATA_FILE = "data/sakura_list.json"
+from .utils.model_size_cauculator import ModelCalculator, ModelConfig
 
 
 class Sakura:
@@ -108,33 +108,21 @@ class SakuraCalculator:
         return best_config
 
 
-class SakuraList:
+class SakuraList(QObject):
     DOWNLOAD_SRC = [
         "HFMirror",
         "HuggingFace",
     ]
 
-    def __init__(self):
-        self._load_from_local()
-        try:
-            self._load_from_remote()
-        except Exception as e:
-            logging.warning(f"获取远程Sakura列表失败:{e}")
+    sakura_list = []
+    sakura_list_changed = Signal(list)
 
-    def _load_from_local(self):
-        with open(os.path.join(SAKURA_DATA_FILE), "r", encoding="utf-8") as f:
-            raw_json = json.load(f)
-        self._update_sakura_list(raw_json)
+    def __init__(self, parent=None):
+        super().__init__(parent)
 
-    def _load_from_remote(self):
-        raw_json = requests.get(
-            f"https://ghp.ci/https://raw.githubusercontent.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/refs/heads/main/data/model_list.json"
-        ).json()
-        self._update_sakura_list(raw_json)
-
-    def _update_sakura_list(self, raw_json):
+    def update_sakura_list(self, data_json):
         sakura_list = []
-        for obj in raw_json:
+        for obj in data_json:
             sakura = Sakura(
                 repo=obj["repo"],
                 filename=obj["filename"],
@@ -147,16 +135,17 @@ class SakuraList:
                 config_cache=obj["config_cache"],
             )
             sakura_list.append(sakura)
-        self._sakura_list = sakura_list
+        self.sakura_list = sakura_list
+        self.sakura_list_changed.emit(sakura_list)
 
     def __getitem__(self, name) -> Sakura:
-        for model in self._sakura_list:
+        for model in self.sakura_list:
             if model.filename == name:
                 return model
         return None
 
     def __iter__(self):
-        for item in self._sakura_list:
+        for item in self.sakura_list:
             yield item
 
 

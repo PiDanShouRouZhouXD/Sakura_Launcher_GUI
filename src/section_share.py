@@ -289,14 +289,20 @@ class CFShareSection(QFrame):
 
     @Slot()
     def refresh_metrics(self):
-        if self.api:
-            self.refresh_metrics_button.setEnabled(False)  # 禁用刷新按钮
-            worker = AsyncWorker(self.api.get_metrics())
-            worker.signals.finished.connect(self.on_metrics_refreshed)
-            worker.signals.error.connect(self.on_error)
-            self.thread_pool.start(worker)
-        else:
-            MessageBox("错误", "API未初始化", self).exec_()
+        worker_url = self.worker_url_input.text().strip()
+        if not worker_url:
+            MessageBox("错误", "请先设置链接", self).exec_()
+            return
+
+        self.refresh_metrics_button.setEnabled(False)  # 禁用刷新按钮
+
+        # 使用现有的API对象或创建一个临时的
+        api = self.api if self.api else SakuraShareAPI(0, worker_url)
+
+        worker = AsyncWorker(api.get_metrics())
+        worker.signals.finished.connect(self.on_metrics_refreshed)
+        worker.signals.error.connect(self.on_error)
+        self.thread_pool.start(worker)
 
     @Slot(object)
     def on_metrics_refreshed(self, metrics):
@@ -460,14 +466,20 @@ class CFShareSection(QFrame):
 
     @Slot()
     def refresh_ranking(self):
-        if self.api:
-            self.refresh_ranking_button.setEnabled(False)  # 禁用刷新按钮
-            worker = AsyncWorker(self.api.get_ranking())
-            worker.signals.finished.connect(self.update_ranking)
-            worker.signals.error.connect(self.on_error_refresh_ranking)
-            self.thread_pool.start(worker)
-        else:
-            MessageBox("错误", "API未初始化", self).exec_()
+        worker_url = self.worker_url_input.text().strip()
+        if not worker_url:
+            MessageBox("错误", "请先设置链接", self).exec_()
+            return
+
+        self.refresh_ranking_button.setEnabled(False)  # 禁用刷新按钮
+
+        # 使用现有的API对象或创建一个临时的
+        api = self.api if self.api else SakuraShareAPI(0, worker_url)
+
+        worker = AsyncWorker(api.get_ranking())
+        worker.signals.finished.connect(self.update_ranking)
+        worker.signals.error.connect(self.on_error_refresh_ranking)
+        self.thread_pool.start(worker)
 
     @Slot(object)
     def update_ranking(self, ranking_data):

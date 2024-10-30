@@ -32,10 +32,10 @@ logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO").upper())
 # 设置CUDA设备顺序，保证nvidia-smi的输出顺序和llama.cpp的输出顺序一致
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 
+
 class MainWindow(MSFluentWindow):
     def __init__(self):
         super().__init__()
-        self.setting = Setting(self)
         self.gpu_manager = GPUManager()
         self.init_navigation()
         self.init_window()
@@ -58,11 +58,11 @@ class MainWindow(MSFluentWindow):
         )
 
     def init_navigation(self):
-        self.settings_section = SettingsSection("设置", self.setting)
-        self.run_server_section = RunServerSection("运行", self, self.setting)
+        self.settings_section = SettingsSection("设置")
+        self.run_server_section = RunServerSection("运行", self)
         self.about_section = AboutSection("关于")
         self.dowload_section = DownloadSection("下载")
-        self.cf_share_section = CFShareSection("共享", self, self.setting)
+        self.cf_share_section = CFShareSection("共享", self)
 
         self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
@@ -113,13 +113,13 @@ class MainWindow(MSFluentWindow):
         self.move(w // 2 - self.width() // 2, h // 2 - self.height() // 2)
 
     def get_llamacpp_path(self):
-        path = self.setting.llamacpp_path
+        path = SETTING.llamacpp_path
         if not path:
             return os.path.join(CURRENT_DIR, "llama")
         return os.path.abspath(path)
 
     def get_model_search_paths(self):
-        paths = self.setting.model_search_paths.split("\n")
+        paths = SETTING.model_search_paths.split("\n")
         return [path.strip() for path in paths if path.strip()]
 
     def _add_quotes(self, path):
@@ -215,13 +215,14 @@ class MainWindow(MSFluentWindow):
 
             try:
                 check_result = self.gpu_manager.check_gpu_ability(
-                    selected_gpu, model_name,
+                    selected_gpu,
+                    model_name,
                     section.context_length_input.value(),
-                    section.n_parallel_spinbox.value()
+                    section.n_parallel_spinbox.value(),
                 )
                 if (
                     not check_result.is_capable
-                    and not self.setting.no_gpu_ability_check
+                    and not SETTING.no_gpu_ability_check
                 ):
                     if check_result.is_fatal:
                         MessageBox(
@@ -327,18 +328,18 @@ class MainWindow(MSFluentWindow):
             logging.info("未检测到NVIDIA或AMD GPU")
 
     def save_window_state(self):
-        if self.setting.remember_window_state:
-            self.setting.window_geometry = {
+        if SETTING.remember_window_state:
+            SETTING.window_geometry = {
                 "x": self.x(),
                 "y": self.y(),
                 "width": self.width(),
                 "height": self.height(),
             }
-            self.setting.save_settings()
+            SETTING.save_settings()
 
     def load_window_state(self):
-        if self.setting.remember_window_state:
-            geometry = self.setting.window_geometry
+        if SETTING.remember_window_state:
+            geometry = SETTING.window_geometry
             if geometry:
                 self.setGeometry(
                     geometry.get("x", self.x()),

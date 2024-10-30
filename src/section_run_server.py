@@ -18,22 +18,22 @@ from qfluentwidgets import (
 from .common import CURRENT_DIR
 from .gpu import GPUManager
 from .sakura import SAKURA_LIST, SakuraCalculator
+from .setting import SETTING
 from .ui import *
 
 
 class RunServerSection(QFrame):
-    def __init__(self, title, main_window, setting, parent=None):
+    def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
-        self.setting = setting
         self.setObjectName(title.replace(" ", "-"))
 
         self._init_ui()
         self.refresh_models()
         self.refresh_gpus()
-        self.load_presets(setting.presets)
+        self.load_presets(SETTING.presets)
 
-        setting.model_sort_option_changed.connect(self.refresh_models)
+        SETTING.model_sort_option_changed.connect(self.refresh_models)
 
     def _init_ui(self):
         menu_base = self._create_menu_base()
@@ -84,7 +84,7 @@ class RunServerSection(QFrame):
     def _create_preset_options(self):
         self.config_preset_combo = EditableComboBox()
         self.config_preset_combo.currentIndexChanged.connect(self.load_selected_preset)
-        self.setting.presets_changed.connect(self.load_presets)
+        SETTING.presets_changed.connect(self.load_presets)
 
         return UiRow(
             (self.config_preset_combo, 1),
@@ -150,8 +150,8 @@ class RunServerSection(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)  # 确保布局的边距也被移除
         self.menu_advance = QFrame(self)
         self.menu_advance.setLayout(layout)
-        if self.setting.remember_advanced_state:
-            self.menu_advance.setVisible(self.setting.advanced_state)
+        if SETTING.remember_advanced_state:
+            self.menu_advance.setVisible(SETTING.advanced_state)
         else:
             self.menu_advance.setVisible(False)
         return self.menu_advance
@@ -215,7 +215,7 @@ class RunServerSection(QFrame):
         logging.debug(f"找到的模型文件: {models}")
 
         # 从设置中获取排序选项
-        sort_option = self.setting.model_sort_option
+        sort_option = SETTING.model_sort_option
 
         # 根据选择的排序方式对模型列表进行排序
         if sort_option == "修改时间":
@@ -238,7 +238,9 @@ class RunServerSection(QFrame):
                 if os.path.splitdrive(abspath)[0] == os.path.splitdrive(CURRENT_DIR)[0]:
                     rel_path = os.path.relpath(abspath, CURRENT_DIR)
                     # 选择更短的路径
-                    models_shortest.append(rel_path if len(rel_path) < len(abs_path) else abs_path)
+                    models_shortest.append(
+                        rel_path if len(rel_path) < len(abs_path) else abs_path
+                    )
                 else:
                     # 不同盘符时使用绝对路径
                     models_shortest.append(abs_path)
@@ -324,41 +326,41 @@ class RunServerSection(QFrame):
         if selected_gpu not in gpu_manager.gpu_info_map:
             UiInfoBarWarning(self, "请先选择一个GPU")
             return
-        
+
         # 检查GPU能力
         gpu_info = gpu_manager.gpu_info_map[selected_gpu]
         ability = gpu_manager.check_gpu_ability(selected_gpu, model_name)
         if not ability.is_capable:
             UiInfoBarWarning(self, ability.reason)
             return
-        
+
         available_memory_gib = gpu_info.avail_dedicated_gpu_memory / (2**30)
         total_memory_gib = gpu_info.dedicated_gpu_memory / (2**30)
-        
+
         try:
             # 创建计算器实例
             calculator = SakuraCalculator(sakura_model)
-            
+
             # 获取推荐配置
             config = calculator.recommend_config(available_memory_gib)
-            
+
             # 应用配置
             self.n_parallel_spinbox.setValue(config["n_parallel"])
             self.context_length_input.setValue(config["context_length"])
-            
+
             # 计算实际显存使用
             memory_usage = calculator.calculate_memory_requirements(
                 config["context_length"]
             )
-            
+
             UiInfoBarSuccess(
                 self,
                 f"已自动配置: context={config['context_length']}, "
                 f"np={config['n_parallel']}, \n"
                 f"当前显存占用: {total_memory_gib - available_memory_gib:.2f} GiB, \n"
-                f"预计模型显存占用: {memory_usage['total_size_gib']:.2f} GiB（可能偏大）。 "
+                f"预计模型显存占用: {memory_usage['total_size_gib']:.2f} GiB（可能偏大）。 ",
             )
-            
+
         except ValueError as e:
             UiInfoBarWarning(self, str(e))
 
@@ -367,7 +369,7 @@ class RunServerSection(QFrame):
         if not preset_name:
             MessageBox("错误", "预设名称不能为空", self).exec()
             return
-        self.setting.set_preset(
+        SETTING.set_preset(
             preset_name,
             {
                 "custom_command": self.command_template.toPlainText(),
@@ -402,7 +404,7 @@ class RunServerSection(QFrame):
 
     def load_selected_preset(self):
         preset_name = self.config_preset_combo.currentText()
-        for preset in self.setting.presets:
+        for preset in SETTING.presets:
             if preset["name"] == preset_name:
                 config = preset["config"]
 
@@ -436,7 +438,6 @@ class RunServerSection(QFrame):
     def toggle_advanced_settings(self):
         new_state = not self.menu_advance.isVisible()
         self.menu_advance.setVisible(new_state)
-        if self.setting.remember_advanced_state:
-            self.setting.advanced_state = new_state
-            self.setting.save_settings()
-
+        if SETTING.remember_advanced_state:
+            SETTING.advanced_state = new_state
+            SETTING.save_settings()

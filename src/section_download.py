@@ -20,7 +20,7 @@ from qfluentwidgets import (
     InfoBar,
 )
 
-from .common import CURRENT_DIR
+from .common import CURRENT_DIR, get_resource_path
 from .llamacpp import *
 from .sakura import SAKURA_LIST, Sakura
 from .ui import *
@@ -67,7 +67,7 @@ def UiDownloadButton(on_click):
 class LoadDataThread(QThread):
     def run(self):
         DATA_FILE = "data.json"
-        with open(os.path.join(DATA_FILE), "r", encoding="utf-8") as f:
+        with open(get_resource_path(DATA_FILE), "r", encoding="utf-8") as f:
             data_json = json.load(f)
         SAKURA_LIST.update_sakura_list(data_json)
         LLAMACPP_LIST.update_llamacpp_list(data_json)

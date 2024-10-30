@@ -15,6 +15,7 @@ class Setting(QObject):
     advanced_state = False
     worker_url = ""
     presets = []
+    no_context_check = False
 
     llamacpp_path_changed = Signal(str)
     model_search_paths_changed = Signal(str)
@@ -24,6 +25,7 @@ class Setting(QObject):
     no_gpu_ability_check_changed = Signal(bool)
     worker_url_changed = Signal(str)
     presets_changed = Signal(list)
+    no_context_check_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -38,6 +40,7 @@ class Setting(QObject):
             self.no_gpu_ability_check_changed,
             self.presets_changed,
             self.worker_url_changed,
+            self.no_context_check_changed,
         ]:
             sig.connect(lambda: self.save_settings())
 
@@ -82,6 +85,7 @@ class Setting(QObject):
             "advanced_state": self.advanced_state,
             "worker_url": self.worker_url,
             "运行": self.presets,
+            "no_context_check": self.no_context_check,
         }
         current_settings = self._read_settings()
         current_settings.update(settings)
@@ -99,6 +103,7 @@ class Setting(QObject):
         self.advanced_state = settings.get("advanced_state", False)
         self.presets = settings.get("运行", [])
         self.worker_url = settings.get("worker_url", "https://sakura-share.one")
+        self.no_context_check = settings.get("no_context_check", False)
 
         # 兼容 v1.0.0-beta
         if type(self.model_search_paths) == list:

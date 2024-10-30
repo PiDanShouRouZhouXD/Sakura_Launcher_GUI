@@ -205,6 +205,12 @@ class SettingsSection(QFrame):
         no_gpu_ability_check.toggled.connect(
             lambda checked: SETTING.set_value("no_gpu_ability_check", checked)
         )
+        no_context_check = UiCheckBox(
+            "关闭每线程上下文长度检查", SETTING.no_context_check
+        )
+        no_context_check.toggled.connect(
+            lambda checked: SETTING.set_value("no_context_check", checked)
+        )
         model_sort_combo = UiComboBox(["修改时间", "文件名", "文件大小"])
         model_sort_combo.setCurrentText(SETTING.model_sort_option)
         model_sort_combo.currentTextChanged.connect(
@@ -230,6 +236,7 @@ class SettingsSection(QFrame):
             remember_window_state,
             remember_advanced_state,
             no_gpu_ability_check,
+            no_context_check,
             UiOptionRow("模型列表排序", model_sort_combo),
             UiOptionRow("llama.cpp文件夹", llamacpp_path),
             UiOptionCol("模型搜索路径", model_search_paths),

@@ -351,6 +351,10 @@ class RunServerSection(QFrame):
         try:
             # 创建计算器实例
             calculator = SakuraCalculator(sakura_model)
+            
+            # 如果不能获取显存占用，则使用最大显存-2GiB
+            if available_memory_gib is None:
+                available_memory_gib = total_memory_gib - 2
 
             # 获取推荐配置
             config = calculator.recommend_config(available_memory_gib)

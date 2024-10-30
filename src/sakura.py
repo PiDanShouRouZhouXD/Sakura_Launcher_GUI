@@ -1,9 +1,6 @@
-import os
-import json
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from hashlib import sha256
-import requests
 
 from PySide6.QtCore import QObject, Signal
 
@@ -114,15 +111,15 @@ class SakuraList(QObject):
         "HuggingFace",
     ]
 
-    sakura_list = []
-    sakura_list_changed = Signal(list)
+    _list: List[Sakura] = []
+    changed = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
     def update_sakura_list(self, data_json):
         sakura_list = []
-        for obj in data_json:
+        for obj in data_json["sakura"]:
             sakura = Sakura(
                 repo=obj["repo"],
                 filename=obj["filename"],
@@ -135,17 +132,17 @@ class SakuraList(QObject):
                 config_cache=obj["config_cache"],
             )
             sakura_list.append(sakura)
-        self.sakura_list = sakura_list
-        self.sakura_list_changed.emit(sakura_list)
+        self._list = sakura_list
+        self.changed.emit(sakura_list)
 
     def __getitem__(self, name) -> Sakura:
-        for model in self.sakura_list:
+        for model in self._list:
             if model.filename == name:
                 return model
         return None
 
     def __iter__(self):
-        for item in self.sakura_list:
+        for item in self._list:
             yield item
 
 

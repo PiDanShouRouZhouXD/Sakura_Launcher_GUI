@@ -64,14 +64,13 @@ def UiDownloadButton(on_click):
     return download_button
 
 
-class RefreshLatestThread(QThread):
-    on_success = Signal()
-
+class LoadDataThread(QThread):
     def run(self):
         DATA_FILE = "data.json"
         with open(os.path.join(DATA_FILE), "r", encoding="utf-8") as f:
             data_json = json.load(f)
         SAKURA_LIST.update_sakura_list(data_json)
+        LLAMACPP_LIST.update_llamacpp_list(data_json)
 
         try:
             username = "PiDanShouRouZhouXD"
@@ -79,14 +78,9 @@ class RefreshLatestThread(QThread):
                 f"https://ghp.ci/https://raw.githubusercontent.com/{username}/Sakura_Launcher_GUI/refs/heads/main/data.json"
             ).json()
             SAKURA_LIST.update_sakura_list(data_json)
+            LLAMACPP_LIST.update_llamacpp_list(data_json)
         except Exception as e:
-            logging.warning(f"获取远程Sakura列表失败:{e}")
-
-        try:
-            get_latest_cuda_release()
-            self.on_success.emit()
-        except Exception as e:
-            logging.error(f"获取最新CUDA版本时出错: {str(e)}")
+            logging.warning(f"获取远程数据失败:{e}")
 
 
 class DownloadTaskState(Enum):
@@ -197,6 +191,7 @@ class DownloadSection(QFrame):
                 ("下载进度", self._create_download_progress_section()),
             ),
         )
+        LoadDataThread(self).start()
 
     def refresh_sakura_table(self, sakura_list):
         table = self.sakura_table
@@ -225,7 +220,7 @@ class DownloadSection(QFrame):
         )
 
         self.sakura_table = UiTable(["名称", "大小", "操作"])
-        SAKURA_LIST.sakura_list_changed.connect(self.refresh_sakura_table)
+        SAKURA_LIST.changed.connect(self.refresh_sakura_table)
 
         description = UiDescription(
             """
@@ -263,9 +258,7 @@ class DownloadSection(QFrame):
         self.llamacpp_table = UiTable(["版本", "适合显卡", "下载"])
         self.refresh_llamacpp_table()
 
-        thread = RefreshLatestThread(self)
-        thread.on_success.connect(self.refresh_llamacpp_table)
-        thread.start()
+        LLAMACPP_LIST.changed.connect(self.refresh_llamacpp_table)
 
         def on_src_change(text):
             self.llamacpp_download_src = text
@@ -273,7 +266,7 @@ class DownloadSection(QFrame):
         select_download_src = UiRow(
             QLabel("下载源"),
             None,
-            UiComboBox(LLAMACPP_DOWNLOAD_SRC, on_src_change),
+            UiComboBox(LLAMACPP_LIST.DOWNLOAD_SRC, on_src_change),
         )
 
         self.label_current_llamacpp_version = QLabel()
@@ -384,7 +377,7 @@ class DownloadSection(QFrame):
 
     def start_download_cudart(self):
         src = self.llamacpp_download_src
-        cudart = LLAMACPP_CUDART
+        cudart = LLAMACPP_LIST.CUDART
         task = DownloadTask(
             name="CUDA-RT",
             url=cudart["download_links"][src],

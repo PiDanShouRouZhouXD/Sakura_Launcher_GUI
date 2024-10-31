@@ -118,7 +118,7 @@ def get_llamacpp_version(llamacpp_path: str):
             capture_output=True,
             text=True,
             timeout=2,
-            shell=True,
+            shell=os.name == "nt",
         )
         version_output = result.stderr.strip()  # 使用 stderr 而不是 stdout
         logging.info(f"版本输出: {version_output}")

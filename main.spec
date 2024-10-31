@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.'), ('data.json', '.'), ('cloudflared-windows-amd64.exe', '.')],
+    datas=[('icon.ico', '.'), ('data.json', '.')],
     hiddenimports=['tiktoken_ext.openai_public', 'tiktoken_ext', 'PySide6', 'PySide6.QtCore', 'PySide6.QtGui', 'qfluentwidgets'],
     hookspath=[],
     hooksconfig={},

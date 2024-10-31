@@ -119,9 +119,6 @@ class MainWindow(MSFluentWindow):
             return os.path.join(CURRENT_DIR, "llama")
         return os.path.abspath(path)
 
-    def _add_quotes(self, path):
-        return f'"{path}"'
-
     def run_llamacpp_server(self):
         self.refresh_gpus()
         self._run_llamacpp("llama-server")
@@ -266,7 +263,7 @@ class MainWindow(MSFluentWindow):
             return
 
         model_name = section.model_path.currentText().split(os.sep)[-1]
-        model_path = self._add_quotes(section.model_path.currentText())
+        model_path = section.model_path.currentText()
         logging.info(f"模型路径: {model_path}")
         logging.info(f"模型名称: {model_name}")
 
@@ -290,52 +287,69 @@ class MainWindow(MSFluentWindow):
             MessageBox("错误", f"可执行文件不存在: {executable_path}", self).exec()
             return
 
-        executable_path = self._add_quotes(executable_path)
-
         # 获取llama.cpp版本
         version = get_llamacpp_version(llamacpp_path)
         logging.info(f"llama.cpp版本: {version}")
 
-        command_raw = f"{executable_path} --model {model_path}"
-        command = command_raw
+        option_model = ["--model", model_path]
+        option_extra = []
+
+        option_extra += [
+            "-c",
+            str(section.context_length_input.value()),
+            "-ngl",
+            str(section.gpu_layers_spinbox.value()),
+        ]
 
         if executable == "llama-server":
-            command += f" -ngl {section.gpu_layers_spinbox.value()}"
-            command += f" -c {section.context_length_input.value()}"
-            command += f" -a {model_name}"
-            command += f" --host {section.host_input.currentText()} --port {section.port_input.text()}"
-            command += f" -np {section.n_parallel_spinbox.value()}"
-
-            if section.flash_attention_check.isChecked():
-                command += " -fa"
-            if section.no_mmap_check.isChecked():
-                command += " --no-mmap"
-            command += " --metrics"
+            option_extra += [
+                "-a",
+                model_name,
+                "--host",
+                section.host_input.currentText(),
+                "--port",
+                section.port_input.text(),
+                "-np",
+                str(section.n_parallel_spinbox.value()),
+            ]
+            option_extra.append("--metrics")
 
             # 根据版本添加--slots参数
             if version is not None and version >= 3898:
                 logging.info("版本大于等于3898，添加--slots参数")
-                command += " --slots"
+                option_extra.append("--slots")
         elif executable == "llama-batched-bench":
-            command += f" -c {section.context_length_input.value()}"
-            command += f" -ngl {section.gpu_layers_spinbox.value()}"
-            command += f" -npp {section.npp_input.text()}"
-            command += f" -ntg {section.ntg_input.text()}"
-            command += f" -npl {section.npl_input.text()}"
-            if section.flash_attention_check.isChecked():
-                command += " -fa"
-            if section.no_mmap_check.isChecked():
-                command += " --no-mmap"
+            option_extra += [
+                "-npp",
+                section.npp_input.text(),
+                "-ntg",
+                section.ntg_input.text(),
+                "-npl",
+                section.npl_input.text(),
+            ]
 
+        if section.flash_attention_check.isChecked():
+            option_extra.append("-fa")
+        if section.no_mmap_check.isChecked():
+            option_extra.append("--no-mmap")
+
+        command = []
         command_template: str = section.command_template.toPlainText().strip()
         if not command_template:
             command_template = "%cmd%"
-        command_template = command_template.replace("%cmd%", command)
-        command_template = command_template.replace("%cmd_raw%", command_raw)
-        command = command_template
+        for command_part in command_template.split(" "):
+            command_part = command_part.strip()
+            if command_part == "%cmd%":
+                command.append(executable_path)
+                command += option_model
+                command += option_extra
+            elif command_part == "%cmd_raw%":
+                command.append(executable_path)
+                command += option_model
+            elif command_part:
+                command.append(command_part)
 
         env = os.environ.copy()
-
         try:
             self.gpu_manager.set_gpu_env(env, selected_gpu, selected_index)
         except Exception as e:
@@ -343,24 +357,23 @@ class MainWindow(MSFluentWindow):
             MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
             return
 
-        logging.info(f"执行命令: {command}")
+        command_plain = " ".join(command)
+        logging.info(f"执行命令: {command_plain}")
 
         # 在运行命令的部分
         if sys.platform == "win32":
-            command = f'start cmd /K "{command}"'
+            command = f'start cmd /K "{command_plain}"'
             subprocess.Popen(command, env=env, shell=True)
         else:
             terminal = self.find_terminal()
             if terminal:
                 if terminal == "gnome-terminal":
-                    subprocess.Popen([terminal, "--", "bash", "-c", command], env=env)
+                    subprocess.Popen([terminal, "--", "bash", "-c"] + command, env=env)
                 else:
-                    subprocess.Popen([terminal, "-e", command], env=env)
+                    subprocess.Popen([terminal, "-e"] + command, env=env)
             else:
-                MessageBox(
-                    "错误", "无法找到合适的终端模拟器。请手动运行命令。", self
-                ).exec()
-                logging.info(f"请手动运行以下命令：\n{command}")
+                MessageBox("错误", "无法找到合适的终端，请手动运行命令。", self).exec()
+                logging.info(f"请手动运行以下命令：\n{command_plain}")
                 return
 
         logging.info("命令已在新的终端窗口中启动。")

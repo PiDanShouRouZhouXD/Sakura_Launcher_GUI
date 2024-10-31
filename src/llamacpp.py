@@ -5,7 +5,6 @@ import subprocess
 import sys
 from typing import Dict, List
 import zipfile
-import py7zr
 
 from PySide6.QtCore import QObject, Signal
 
@@ -90,9 +89,6 @@ def unzip_llamacpp(folder: str, filename: str):
     if filename.endswith(".zip"):
         with zipfile.ZipFile(file_path, "r") as zip_ref:
             zip_ref.extractall(llama_folder)
-    elif filename.endswith(".7z"):
-        with py7zr.SevenZipFile(file_path, mode="r") as z:
-            z.extractall(llama_folder)
     else:
         print(f"不支持的文件格式: {filename}")
         return

@@ -18,6 +18,7 @@ exclude_prefix = [
    'PySide6\\opengl32sw.dll',
     'PySide6\\Qt6Pdf.dll',
     'PySide6\\Qt6Network.dll',
+    'PySide6\\QtNetwork.pyd',
     'PySide6\\Qt6VirtualKeyboard.dll',
     'PySide6\\Qt6Qml.dll',
     'PySide6\\Qt6Quick.dll',
@@ -28,11 +29,13 @@ exclude_prefix = [
     # QNetwork前置依赖
     'libcrypto-3-x64.dll',
     'libssl-3-x64.dll',
+    'libcrypto-3.dll',
+    'libssl-3.dll',
 ]
 def should_include(t):
     return not any(t[0].startswith(prefix) for prefix in exclude_prefix)
-a.binaries = filter(should_include, a.binaries)
-a.datas = filter(should_include, a.datas)
+a.binaries = list(filter(should_include, a.binaries))
+a.datas = list(filter(should_include, a.datas))
 
 pyz = PYZ(a.pure)
 

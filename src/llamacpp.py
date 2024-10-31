@@ -39,8 +39,8 @@ class Llamacpp:
 
 class LlamacppList(QObject):
     DOWNLOAD_SRC = [
-        "GitHub",
         "GHProxy",
+        "GitHub",
     ]
     CUDART = {
         "filename": "cudart-llama-bin-win-cu12.2.0-x64.zip",

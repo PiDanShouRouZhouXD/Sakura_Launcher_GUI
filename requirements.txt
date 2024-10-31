@@ -2,8 +2,6 @@ PySide6==6.6.2
 PySide6-Fluent-Widgets
 wmi
 requests
-py7zr
-
 aiohttp
 
 # for dist packing

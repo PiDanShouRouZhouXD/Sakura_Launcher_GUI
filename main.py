@@ -58,21 +58,24 @@ class MainWindow(MSFluentWindow):
         )
 
     def init_navigation(self):
-        self.settings_section = SettingsSection("设置")
-        self.run_server_section = RunServerSection("运行", self)
-        self.about_section = AboutSection("关于")
+        self.run_server_section = RunServerSection("启动", self)
         self.dowload_section = DownloadSection("下载")
         self.cf_share_section = CFShareSection("共享", self)
+        self.settings_section = SettingsSection("设置")
+        self.about_section = AboutSection("关于")
 
-        self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行")
+        self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "启动")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
         self.addSubInterface(self.cf_share_section, FIF.IOT, "共享")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
         self.addSubInterface(
-            self.about_section, FIF.INFO, "关于", position=NavigationItemPosition.BOTTOM
+            self.about_section,
+            FIF.INFO,
+            "关于",
+            position=NavigationItemPosition.BOTTOM,
         )
 
-        self.navigationInterface.setCurrentItem(self.run_server_section.objectName())
+        self.navigationInterface.setCurrentItem("启动")
 
     def init_window(self):
         self.run_server_section.run_button.clicked.connect(self.run_llamacpp_server)
@@ -117,10 +120,6 @@ class MainWindow(MSFluentWindow):
         if not path:
             return os.path.join(CURRENT_DIR, "llama")
         return os.path.abspath(path)
-
-    def get_model_search_paths(self):
-        paths = SETTING.model_search_paths.split("\n")
-        return [path.strip() for path in paths if path.strip()]
 
     def _add_quotes(self, path):
         return f'"{path}"'
@@ -203,7 +202,7 @@ class MainWindow(MSFluentWindow):
                 f"2. 减少并发数量\n"
                 f"3. 点击「自动配置」按钮进行自动优化，然后继续\n（仅支持「下载」页面中的模型）\n\n"
                 f"注：此警告可以在设置中关闭",
-                self
+                self,
             )
             is_quit = False
 
@@ -223,29 +222,36 @@ class MainWindow(MSFluentWindow):
 
             box.yesSignal.connect(on_yes)
             box.cancelSignal.connect(on_cancel)
-            
+
             # 创建自动配置按钮并添加到buttonGroup
             from qfluentwidgets import PushButton
+
             auto_config_button = PushButton("自动配置", box)
             auto_config_button.clicked.connect(on_auto_config)
-            box.buttonGroup.layout().insertWidget(1, auto_config_button)  # 插入到yes和cancel按钮之间
-            
+            box.buttonGroup.layout().insertWidget(
+                1, auto_config_button
+            )  # 插入到yes和cancel按钮之间
+
             box.yesButton.setText("继续")
             box.cancelButton.setText("停止")
             box.exec()
             return not is_quit
         return True
 
-    def check_launch_requirements(self, selected_gpu, model_name, context_length, n_parallel):
+    def check_launch_requirements(
+        self, selected_gpu, model_name, context_length, n_parallel
+    ):
         """检查启动要求"""
         # 检查GPU能力
-        if not self.check_gpu_ability(selected_gpu, model_name, context_length, n_parallel):
+        if not self.check_gpu_ability(
+            selected_gpu, model_name, context_length, n_parallel
+        ):
             return False
-            
+
         # 检查每线程上下文长度
         if not self.check_context_per_thread(context_length, n_parallel):
             return False
-            
+
         return True
 
     def _run_llamacpp(self, executable):
@@ -276,7 +282,7 @@ class MainWindow(MSFluentWindow):
                 selected_gpu,
                 model_name,
                 section.context_length_input.value(),
-                section.n_parallel_spinbox.value()
+                section.n_parallel_spinbox.value(),
             ):
                 return
 

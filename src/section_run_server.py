@@ -26,7 +26,7 @@ class RunServerSection(QFrame):
     def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
-        self.setObjectName(title.replace(" ", "-"))
+        self.setObjectName(title)
 
         self._init_ui()
         self.refresh_models()
@@ -133,7 +133,6 @@ class RunServerSection(QFrame):
                     "自定义命令模板，其中",
                     "- %cmd%会替换成UI生成的完整命令",
                     "- %cmd_raw%会被替换成UI生成的命令和模型选项，但不包括其他选项",
-                    "双AMD显卡用户，请使用 cmd.exe /c set HIP_VISIBLE_DEVICES='1' `& %cmd% 来指定显卡",
                 ]
             )
         )
@@ -191,7 +190,8 @@ class RunServerSection(QFrame):
     def refresh_models(self):
         self.model_path.clear()
         models = []
-        search_paths = [CURRENT_DIR] + self.main_window.get_model_search_paths()
+        paths = SETTING.model_search_paths.split("\n")
+        search_paths = [CURRENT_DIR] + [path.strip() for path in paths if path.strip()]
         logging.debug(f"搜索路径: {search_paths}")
         for path in search_paths:
             logging.debug(f"正在搜索路径: {path}")
@@ -256,7 +256,7 @@ class RunServerSection(QFrame):
     def refresh_gpus(self, keep_selected=False):
         # 保存当前选择的GPU
         current_gpu = self.gpu_combo.currentText() if keep_selected else None
-        
+
         self.gpu_combo.clear()
         self.nvidia_gpus = self.main_window.gpu_manager.nvidia_gpus
         self.amd_gpus = self.main_window.gpu_manager.amd_gpus
@@ -273,7 +273,7 @@ class RunServerSection(QFrame):
             logging.warning("未检测到NVIDIA或AMD GPU")
 
         self.gpu_combo.addItems(["自动"])
-        
+
         # 如果需要保持选择，尝试恢复之前的选择
         if keep_selected and current_gpu:
             index = self.gpu_combo.findText(current_gpu)
@@ -351,7 +351,7 @@ class RunServerSection(QFrame):
         try:
             # 创建计算器实例
             calculator = SakuraCalculator(sakura_model)
-            
+
             # 如果不能获取显存占用，则使用最大显存-2GiB
             if available_memory_gib is None:
                 available_memory_gib = total_memory_gib - 2

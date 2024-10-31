@@ -39,11 +39,6 @@ class MainWindow(MSFluentWindow):
         self.gpu_manager = GPUManager()
         self.init_navigation()
         self.init_window()
-        cloudflared_path = get_resource_path(CLOUDFLARED)
-        if not os.path.exists(cloudflared_path):
-            MessageBox(
-                "错误", f"cloudflared 可执行文件不存在: {cloudflared_path}", self
-            ).exec()
         self.setMinimumSize(600, 700)
         self.load_window_state()
 
@@ -86,7 +81,10 @@ class MainWindow(MSFluentWindow):
             self.run_llamacpp_batch_bench
         )
 
-        # 连接设置更改信号
+        self.cf_share_section.request_download_cloudflared.connect(
+            self.dowload_section.start_download_cloudflared
+        )
+
         self.settings_section.sig_need_update.connect(
             self.dowload_section.start_download_launcher
         )

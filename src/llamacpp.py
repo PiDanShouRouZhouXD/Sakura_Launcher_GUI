@@ -5,7 +5,6 @@ import subprocess
 import sys
 from typing import Dict, List
 import zipfile
-import py7zr
 
 from PySide6.QtCore import QObject, Signal
 
@@ -40,8 +39,8 @@ class Llamacpp:
 
 class LlamacppList(QObject):
     DOWNLOAD_SRC = [
-        "GitHub",
         "GHProxy",
+        "GitHub",
     ]
     CUDART = {
         "filename": "cudart-llama-bin-win-cu12.2.0-x64.zip",
@@ -90,9 +89,6 @@ def unzip_llamacpp(folder: str, filename: str):
     if filename.endswith(".zip"):
         with zipfile.ZipFile(file_path, "r") as zip_ref:
             zip_ref.extractall(llama_folder)
-    elif filename.endswith(".7z"):
-        with py7zr.SevenZipFile(file_path, mode="r") as z:
-            z.extractall(llama_folder)
     else:
         print(f"不支持的文件格式: {filename}")
         return
@@ -122,7 +118,7 @@ def get_llamacpp_version(llamacpp_path: str):
             capture_output=True,
             text=True,
             timeout=2,
-            shell=True,
+            shell=os.name == "nt",
         )
         version_output = result.stderr.strip()  # 使用 stderr 而不是 stdout
         logging.info(f"版本输出: {version_output}")

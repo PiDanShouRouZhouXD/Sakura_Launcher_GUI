@@ -178,7 +178,7 @@ class DownloadThread(QThread):
 
 
 class DownloadSection(QFrame):
-    llamacpp_download_src = "GHProxy"
+    llamacpp_download_src = LLAMACPP_LIST.DOWNLOAD_SRC[0]
     sakura_download_src = SAKURA_LIST.DOWNLOAD_SRC[0]
     download_tasks: List[DownloadTask] = []
     download_threads: List[QThread] = []
@@ -230,8 +230,7 @@ class DownloadSection(QFrame):
         description = UiDescription(
             """
         <p>您可以在这里下载不同版本的模型，模型会保存到启动器所在的目录。如果启动器无法下载，您也可以手动从<a href="https://hf-mirror.com/SakuraLLM/Sakura-14B-Qwen2beta-v0.9.2-GGUF/">Hugging Face镜像站</a>下载模型，将下载的gguf文件放到启动器所在文件夹下即可。</p>
-        <p>12G以下显存推荐使用GalTransl-7B-v2.6-IQ4_XS.gguf</p>
-        <p>12G及以上显存推荐使用sakura-14b-qwen2.5-v1.0-iq4xs.gguf</p>
+        <p>翻译Galgame推荐使用7B模型，12G以下显存可用。翻译小说推荐使用14B模型，需要12G及以上显存。</p>
         """
         )
 
@@ -351,7 +350,7 @@ class DownloadSection(QFrame):
         self.download_threads.append(thread)
 
         logging.info(f"开始下载: URL={new_task.url}, 文件名={new_task.filename}")
-        UiInfoBarSuccess(self, f"{new_task.name}开始下载")
+        UiInfoBarSuccess(self, f"{new_task.name}开始下载，请在下载进度页面查看进度")
 
     def _update_current_llamacpp_version(self):
         version = get_llamacpp_version(os.path.join(CURRENT_DIR, "llama"))
@@ -435,14 +434,36 @@ class DownloadSection(QFrame):
 
     def start_download_launcher(self, version: str):
         filename = f"Sakura_Launcher_GUI_{version}.exe"
+        url = f"https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/{version}/{filename}"
+        if self.llamacpp_download_src == "GHProxy":
+            url = "https://ghp.ci/" + url
+
         task = DownloadTask(
             name="Sakura启动器",
-            url=f"https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/releases/download/{version}/{filename}",
+            url=url,
             filename=filename,
         )
 
-        def on_download_llamacpp_finish():
+        def on_finish():
             task.state = DownloadTaskState.SUCCESS
             UiInfoBarSuccess(self, f"{task.name}下载成功")
 
-        self._start_download_task(task, on_finish=on_download_llamacpp_finish)
+        self._start_download_task(task, on_finish=on_finish)
+
+    def start_download_cloudflared(self):
+        filename = "cloudflared-windows-amd64.exe"
+        url = "https://github.com/cloudflare/cloudflared/releases/download/2024.10.1/cloudflared-windows-amd64.exe"
+        if self.llamacpp_download_src == "GHProxy":
+            url = "https://ghp.ci/" + url
+
+        task = DownloadTask(
+            name="Cloudflared",
+            url=url,
+            filename=filename,
+        )
+
+        def on_finish():
+            task.state = DownloadTaskState.SUCCESS
+            UiInfoBarSuccess(self, f"{task.name}下载成功")
+
+        self._start_download_task(task, on_finish=on_finish)

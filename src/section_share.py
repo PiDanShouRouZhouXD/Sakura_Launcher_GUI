@@ -61,6 +61,8 @@ class AsyncWorker(QRunnable):
 
 
 class CFShareSection(QFrame):
+    request_download_cloudflared = Signal()
+
     def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
@@ -121,7 +123,7 @@ class CFShareSection(QFrame):
         layout = QVBoxLayout(self.share_page)
         layout.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
 
-        self.refresh_slots_button = PushButton(FIF.SYNC, "刷新在线数量")
+        self.refresh_slots_button = PushButton(FIF.SYNC, "刷新")
         self.refresh_slots_button.clicked.connect(self.refresh_slots)
 
         self.stop_button = PushButton(FIF.CLOSE, "下线")
@@ -349,6 +351,12 @@ class CFShareSection(QFrame):
 
     @Slot()
     def start_cf_share(self):
+        cloudflared_path = os.path.join(os.path.abspath("."), CLOUDFLARED)
+        if not os.path.exists(cloudflared_path):
+            UiInfoBarWarning(self, "未检测到Cloudflared，请等待下载完成后再上线。")
+            self.request_download_cloudflared.emit()
+            return
+
         worker_url = self.worker_url_input.text().strip()
         if not worker_url:
             MessageBox("错误", "请输入WORKER_URL", self).exec_()

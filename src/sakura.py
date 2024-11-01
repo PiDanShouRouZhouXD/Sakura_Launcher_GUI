@@ -82,25 +82,20 @@ class SakuraCalculator:
     def recommend_config(self, available_memory_gib: float) -> Dict[str, int]:
         """根据可用显存推荐配置"""
 
-        best_config = {"context_length": 2048, "n_parallel": 1}
+        best_config = {"context_length": 1536, "n_parallel": 1}
 
-        # 找到当前可用显存下最大的推荐np值，但不超过16
-        max_np = 1  # 默认值为1
-        for memory_threshold, np in self.sakura.recommended_np.items():
-            if available_memory_gib >= float(memory_threshold):
-                max_np = min(np, 16)  # 限制最大np为16
-
-        try:
-            # 确保每个线程至少有1536的上下文长度
-            min_ctx_per_thread = 1536
-            ctx = min_ctx_per_thread * max_np
+        # 从16遍历到1，找到最大的n_parallel值
+        for np in range(16, 0, -1):
+            ctx = 1536 * np  # 确保每个线程至少有1536的上下文长度
             mem_req = self.calculate_memory_requirements(ctx)
 
             if mem_req["total_size_gib"] <= available_memory_gib:
                 best_config["context_length"] = ctx
-                best_config["n_parallel"] = max_np
-        except Exception as e:
-            logging.warning(f"计算配置时出错: {e}")
+                best_config["n_parallel"] = np
+                logging.info(f"推荐配置: {best_config}")
+                break  # 找到合适的配置后退出循环
+            else:
+                logging.debug(f"配置不满足: context_length={ctx}, n_parallel={np}, total_size_gib={mem_req['total_size_gib']}")
 
         return best_config
 

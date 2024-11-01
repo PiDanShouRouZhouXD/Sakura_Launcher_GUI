@@ -7,3 +7,4 @@ llama
 sakura-launcher_config.json
 *.gguf
 *.log
+cloudflared-windows-amd64.exe

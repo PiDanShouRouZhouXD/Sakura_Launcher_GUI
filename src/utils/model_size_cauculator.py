@@ -5,12 +5,6 @@ import json
 import requests
 import re
 
-# 设置日志配置
-logging.basicConfig(
-    level=logging.DEBUG, 
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
 @dataclass
 class ModelConfig:
     """模型配置和计算参数"""
@@ -139,9 +133,12 @@ class ModelCalculator:
         total_size_gib = model_size_gib + context_size_gib
         
         logging.debug(
-            f"Total size - Model: {model_size_gib} GiB, "
-            f"Context: {context_size_gib} GiB, "
-            f"Total: {total_size_gib} GiB"
+            f"模型信息: {self.config.hf_model}\n"
+            f"配置: context={self.config.context}, batch_size={self.config.batch_size}, "
+            f"cache_bit={self.config.cache_bit}, bytes_per_weight={self.config.bytes_per_weight}\n"
+            f"计算结果 - 模型大小: {model_size_gib} GiB, "
+            f"上下文大小: {context_size_gib} GiB, "
+            f"总大小: {total_size_gib} GiB"
         )
         
         return {

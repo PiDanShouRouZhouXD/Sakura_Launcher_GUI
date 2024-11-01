@@ -39,11 +39,6 @@ class MainWindow(MSFluentWindow):
         self.gpu_manager = GPUManager()
         self.init_navigation()
         self.init_window()
-        cloudflared_path = get_resource_path(CLOUDFLARED)
-        if not os.path.exists(cloudflared_path):
-            MessageBox(
-                "错误", f"cloudflared 可执行文件不存在: {cloudflared_path}", self
-            ).exec()
         self.setMinimumSize(600, 700)
         self.load_window_state()
 
@@ -58,21 +53,24 @@ class MainWindow(MSFluentWindow):
         )
 
     def init_navigation(self):
-        self.settings_section = SettingsSection("设置")
-        self.run_server_section = RunServerSection("运行", self)
-        self.about_section = AboutSection("关于")
+        self.run_server_section = RunServerSection("启动", self)
         self.dowload_section = DownloadSection("下载")
         self.cf_share_section = CFShareSection("共享", self)
+        self.settings_section = SettingsSection("设置")
+        self.about_section = AboutSection("关于")
 
-        self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "运行")
+        self.addSubInterface(self.run_server_section, FIF.COMMAND_PROMPT, "启动")
         self.addSubInterface(self.dowload_section, FIF.DOWNLOAD, "下载")
         self.addSubInterface(self.cf_share_section, FIF.IOT, "共享")
         self.addSubInterface(self.settings_section, FIF.SETTING, "设置")
         self.addSubInterface(
-            self.about_section, FIF.INFO, "关于", position=NavigationItemPosition.BOTTOM
+            self.about_section,
+            FIF.INFO,
+            "关于",
+            position=NavigationItemPosition.BOTTOM,
         )
 
-        self.navigationInterface.setCurrentItem(self.run_server_section.objectName())
+        self.navigationInterface.setCurrentItem("启动")
 
     def init_window(self):
         self.run_server_section.run_button.clicked.connect(self.run_llamacpp_server)
@@ -83,7 +81,10 @@ class MainWindow(MSFluentWindow):
             self.run_llamacpp_batch_bench
         )
 
-        # 连接设置更改信号
+        self.cf_share_section.request_download_cloudflared.connect(
+            self.dowload_section.start_download_cloudflared
+        )
+
         self.settings_section.sig_need_update.connect(
             self.dowload_section.start_download_launcher
         )
@@ -117,13 +118,6 @@ class MainWindow(MSFluentWindow):
         if not path:
             return os.path.join(CURRENT_DIR, "llama")
         return os.path.abspath(path)
-
-    def get_model_search_paths(self):
-        paths = SETTING.model_search_paths.split("\n")
-        return [path.strip() for path in paths if path.strip()]
-
-    def _add_quotes(self, path):
-        return f'"{path}"'
 
     def run_llamacpp_server(self):
         self.refresh_gpus()
@@ -203,7 +197,7 @@ class MainWindow(MSFluentWindow):
                 f"2. 减少并发数量\n"
                 f"3. 点击「自动配置」按钮进行自动优化，然后继续\n（仅支持「下载」页面中的模型）\n\n"
                 f"注：此警告可以在设置中关闭",
-                self
+                self,
             )
             is_quit = False
 
@@ -223,29 +217,36 @@ class MainWindow(MSFluentWindow):
 
             box.yesSignal.connect(on_yes)
             box.cancelSignal.connect(on_cancel)
-            
+
             # 创建自动配置按钮并添加到buttonGroup
             from qfluentwidgets import PushButton
+
             auto_config_button = PushButton("自动配置", box)
             auto_config_button.clicked.connect(on_auto_config)
-            box.buttonGroup.layout().insertWidget(1, auto_config_button)  # 插入到yes和cancel按钮之间
-            
+            box.buttonGroup.layout().insertWidget(
+                1, auto_config_button
+            )  # 插入到yes和cancel按钮之间
+
             box.yesButton.setText("继续")
             box.cancelButton.setText("停止")
             box.exec()
             return not is_quit
         return True
 
-    def check_launch_requirements(self, selected_gpu, model_name, context_length, n_parallel):
+    def check_launch_requirements(
+        self, selected_gpu, model_name, context_length, n_parallel
+    ):
         """检查启动要求"""
         # 检查GPU能力
-        if not self.check_gpu_ability(selected_gpu, model_name, context_length, n_parallel):
+        if not self.check_gpu_ability(
+            selected_gpu, model_name, context_length, n_parallel
+        ):
             return False
-            
+
         # 检查每线程上下文长度
         if not self.check_context_per_thread(context_length, n_parallel):
             return False
-            
+
         return True
 
     def _run_llamacpp(self, executable):
@@ -262,7 +263,7 @@ class MainWindow(MSFluentWindow):
             return
 
         model_name = section.model_path.currentText().split(os.sep)[-1]
-        model_path = self._add_quotes(section.model_path.currentText())
+        model_path = section.model_path.currentText()
         logging.info(f"模型路径: {model_path}")
         logging.info(f"模型名称: {model_name}")
 
@@ -276,7 +277,7 @@ class MainWindow(MSFluentWindow):
                 selected_gpu,
                 model_name,
                 section.context_length_input.value(),
-                section.n_parallel_spinbox.value()
+                section.n_parallel_spinbox.value(),
             ):
                 return
 
@@ -286,52 +287,69 @@ class MainWindow(MSFluentWindow):
             MessageBox("错误", f"可执行文件不存在: {executable_path}", self).exec()
             return
 
-        executable_path = self._add_quotes(executable_path)
-
         # 获取llama.cpp版本
         version = get_llamacpp_version(llamacpp_path)
         logging.info(f"llama.cpp版本: {version}")
 
-        command_raw = f"{executable_path} --model {model_path}"
-        command = command_raw
+        option_model = ["--model", model_path]
+        option_extra = []
+
+        option_extra += [
+            "-c",
+            str(section.context_length_input.value()),
+            "-ngl",
+            str(section.gpu_layers_spinbox.value()),
+        ]
 
         if executable == "llama-server":
-            command += f" -ngl {section.gpu_layers_spinbox.value()}"
-            command += f" -c {section.context_length_input.value()}"
-            command += f" -a {model_name}"
-            command += f" --host {section.host_input.currentText()} --port {section.port_input.text()}"
-            command += f" -np {section.n_parallel_spinbox.value()}"
-
-            if section.flash_attention_check.isChecked():
-                command += " -fa"
-            if section.no_mmap_check.isChecked():
-                command += " --no-mmap"
-            command += " --metrics"
+            option_extra += [
+                "-a",
+                model_name,
+                "--host",
+                section.host_input.currentText(),
+                "--port",
+                section.port_input.text(),
+                "-np",
+                str(section.n_parallel_spinbox.value()),
+            ]
+            option_extra.append("--metrics")
 
             # 根据版本添加--slots参数
             if version is not None and version >= 3898:
                 logging.info("版本大于等于3898，添加--slots参数")
-                command += " --slots"
+                option_extra.append("--slots")
         elif executable == "llama-batched-bench":
-            command += f" -c {section.context_length_input.value()}"
-            command += f" -ngl {section.gpu_layers_spinbox.value()}"
-            command += f" -npp {section.npp_input.text()}"
-            command += f" -ntg {section.ntg_input.text()}"
-            command += f" -npl {section.npl_input.text()}"
-            if section.flash_attention_check.isChecked():
-                command += " -fa"
-            if section.no_mmap_check.isChecked():
-                command += " --no-mmap"
+            option_extra += [
+                "-npp",
+                section.npp_input.text(),
+                "-ntg",
+                section.ntg_input.text(),
+                "-npl",
+                section.npl_input.text(),
+            ]
 
+        if section.flash_attention_check.isChecked():
+            option_extra.append("-fa")
+        if section.no_mmap_check.isChecked():
+            option_extra.append("--no-mmap")
+
+        command = []
         command_template: str = section.command_template.toPlainText().strip()
         if not command_template:
             command_template = "%cmd%"
-        command_template = command_template.replace("%cmd%", command)
-        command_template = command_template.replace("%cmd_raw%", command_raw)
-        command = command_template
+        for command_part in command_template.split(" "):
+            command_part = command_part.strip()
+            if command_part == "%cmd%":
+                command.append(executable_path)
+                command += option_model
+                command += option_extra
+            elif command_part == "%cmd_raw%":
+                command.append(executable_path)
+                command += option_model
+            elif command_part:
+                command.append(command_part)
 
         env = os.environ.copy()
-
         try:
             self.gpu_manager.set_gpu_env(env, selected_gpu, selected_index)
         except Exception as e:
@@ -339,24 +357,23 @@ class MainWindow(MSFluentWindow):
             MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
             return
 
-        logging.info(f"执行命令: {command}")
+        command_plain = " ".join(command)
+        logging.info(f"执行命令: {command_plain}")
 
         # 在运行命令的部分
         if sys.platform == "win32":
-            command = f'start cmd /K "{command}"'
+            command = f'start cmd /K "{command_plain}"'
             subprocess.Popen(command, env=env, shell=True)
         else:
             terminal = self.find_terminal()
             if terminal:
                 if terminal == "gnome-terminal":
-                    subprocess.Popen([terminal, "--", "bash", "-c", command], env=env)
+                    subprocess.Popen([terminal, "--", "bash", "-c"] + command, env=env)
                 else:
-                    subprocess.Popen([terminal, "-e", command], env=env)
+                    subprocess.Popen([terminal, "-e"] + command, env=env)
             else:
-                MessageBox(
-                    "错误", "无法找到合适的终端模拟器。请手动运行命令。", self
-                ).exec()
-                logging.info(f"请手动运行以下命令：\n{command}")
+                MessageBox("错误", "无法找到合适的终端，请手动运行命令。", self).exec()
+                logging.info(f"请手动运行以下命令：\n{command_plain}")
                 return
 
         logging.info("命令已在新的终端窗口中启动。")

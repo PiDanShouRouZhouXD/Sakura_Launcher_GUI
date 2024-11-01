@@ -379,6 +379,8 @@ class CFShareSection(QFrame):
 
             self.update_status(f"正在注册节点 - {self.api.tunnel_url}")
 
+            await asyncio.sleep(5)  # 延迟5秒钟
+
             success = await self.api.register_node(self.tg_token_input.text().strip())
             if not success:
                 raise Exception("无法注册节点，请检查网络连接或稍后重试")
@@ -441,8 +443,30 @@ class CFShareSection(QFrame):
     @Slot(Exception)
     def on_error(self, error):
         logging.error(str(error))
-        self.stop_cf_share()
-        MessageBox("错误", str(error), self).exec_()
+        
+        # 检查是否是网络相关错误,且本地服务正常
+        async def check_and_retry():
+            try:
+                if self.api and await self.api.check_local_health_status():
+                    # 本地服务正常,尝试重新注册
+                    self.status_label.setText("状态: 检测到本地服务正常,尝试重新连接...")
+                    success = await self.api.register_node(self.tg_token_input.text().strip())
+                    if success:
+                        self.status_label.setText(f"状态: 运行中 - {self.api.tunnel_url}")
+                        UiInfoBarSuccess(self, "重新连接成功。")
+                        return
+                
+                # 如果重试失败或本地服务异常,则执行下线流程
+                self.stop_cf_share()
+                MessageBox("错误", str(error), self).exec_()
+                
+            except Exception as e:
+                logging.error(f"重试过程发生错误: {str(e)}")
+                self.stop_cf_share()
+                MessageBox("错误", str(error), self).exec_()
+
+        worker = AsyncWorker(check_and_retry())
+        self.thread_pool.start(worker)
 
     @Slot()
     def refresh_slots(self):

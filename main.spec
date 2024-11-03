@@ -26,11 +26,6 @@ exclude_prefix = [
     'PySide6\\Qt6QmlModels.dll',
     'PySide6\\translations',
     'Pythonwin',
-    # QNetwork前置依赖
-    'libcrypto-3-x64.dll',
-    'libssl-3-x64.dll',
-    'libcrypto-3.dll',
-    'libssl-3.dll',
 ]
 def should_include(t):
     return not any(t[0].startswith(prefix) for prefix in exclude_prefix)

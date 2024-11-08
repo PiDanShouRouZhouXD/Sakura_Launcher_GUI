@@ -351,7 +351,8 @@ class MainWindow(MSFluentWindow):
 
         env = os.environ.copy()
         try:
-            self.gpu_manager.set_gpu_env(env, selected_gpu, selected_index)
+            if section.gpu_combo.currentText() != "自动":
+                self.gpu_manager.set_gpu_env(env, section.gpu_combo.currentText(), section.gpu_combo.currentIndex())
         except Exception as e:
             logging.info(f"设置GPU环境变量时出错: {str(e)}")
             MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()

@@ -64,7 +64,7 @@ Sakura Launcher GUI 是一个用于启动和管理SakuraLLM相关任务的图形
 - 链接：自定义自行部署的worker url（不推荐）
 - 令牌：设置共享的令牌，用于累计共享信息，参加在线排行榜 （在当前版本中1.1.0中，由于服务端想逛功能尚未开发，所以**无法使用**）
 - 本地数据统计：查看本地共享数据，包含所有的请求数据，未区分本地使用和共享
-- share工具的[API](src\sakura_share_api.py)是与GUI完全解耦的，并另外提供了[CLI工具](src\sakura_share_cli.py)，如有需要，可以脱离GUI使用。
+- share工具的[API](https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/blob/main/src/sakura_share_api.py)是与GUI完全解耦的，并另外提供了[CLI工具](https://github.com/PiDanShouRouZhouXD/Sakura_Launcher_GUI/blob/main/src/sakura_share_cli.py)，如有需要，可以脱离GUI使用。
 - 关于共享功能的说明，请查看：[sakura-share](https://github.com/1PercentSync/sakura-share)
 
 ### 2.3 设置页面功能

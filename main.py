@@ -352,7 +352,11 @@ class MainWindow(MSFluentWindow):
         env = os.environ.copy()
         try:
             if section.gpu_combo.currentText() != "自动":
-                self.gpu_manager.set_gpu_env(env, section.gpu_combo.currentText(), section.gpu_combo.currentIndex())
+                self.gpu_manager.set_gpu_env(
+                    env,
+                    section.gpu_combo.currentText(),
+                    section.gpu_combo.currentIndex(),
+                )
         except Exception as e:
             logging.info(f"设置GPU环境变量时出错: {str(e)}")
             MessageBox("错误", f"设置GPU环境变量时出错: {str(e)}", self).exec()
@@ -363,19 +367,19 @@ class MainWindow(MSFluentWindow):
 
         # 在运行命令的部分
         if sys.platform == "win32":
-            command = f'start cmd /K "{command_plain}"'
-            subprocess.Popen(command, env=env, shell=True)
+            command_prefix = ["start", "cmd", "/K"]
+            subprocess.Popen(command_prefix + command, env=env, shell=True)
         else:
             terminal = self.find_terminal()
-            if terminal:
-                if terminal == "gnome-terminal":
-                    subprocess.Popen([terminal, "--", "bash", "-c"] + command, env=env)
-                else:
-                    subprocess.Popen([terminal, "-e"] + command, env=env)
-            else:
+            if not terminal:
                 MessageBox("错误", "无法找到合适的终端，请手动运行命令。", self).exec()
                 logging.info(f"请手动运行以下命令：\n{command_plain}")
                 return
+            if terminal == "gnome-terminal":
+                command_prefix = [terminal, "--", "bash", "-c"]
+            else:
+                command_prefix = [terminal, "-e"]
+            subprocess.Popen(command_prefix + command, env=env)
 
         logging.info("命令已在新的终端窗口中启动。")
 

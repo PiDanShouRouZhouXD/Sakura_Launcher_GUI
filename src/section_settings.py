@@ -288,9 +288,19 @@ class SettingsSection(QFrame):
             log_display,
         )
 
+    def is_version_newer(self, version: str):
+        def split_version(v: str):
+            parts = v.removeprefix("v").replace("-", ".").split(".")
+            if len(parts) == 3:
+                parts.append("release")
+            parts = list(map(int, parts[:3])) + [parts[3]]
+            return parts
+
+        return split_version(version) > split_version(SAKURA_LAUNCHER_GUI_VERSION)
+
     def check_launcher_update(self):
         def notify_need_update(version: str):
-            if version != SAKURA_LAUNCHER_GUI_VERSION:
+            if self.is_version_newer(version):
                 UiInfoBarWarning(self, f"检测到新版本启动器{version}发布")
 
         thread = CheckUpdateThread(self)
@@ -299,7 +309,7 @@ class SettingsSection(QFrame):
 
     def update_launcher(self):
         def notify_need_update(version: str):
-            if version != SAKURA_LAUNCHER_GUI_VERSION:
+            if self.is_version_newer(version):
                 self.sig_need_update.emit(version)
             else:
                 UiInfoBarSuccess(self, "启动器版本已是最新")

@@ -16,7 +16,7 @@ from qfluentwidgets import (
 )
 
 from .common import CURRENT_DIR
-from .gpu import GPUManager
+from .gpu import GPUManager, GPUDisplayHelper
 from .sakura import SAKURA_LIST, SakuraCalculator
 from .setting import SETTING
 from .ui import *
@@ -333,14 +333,17 @@ class RunServerSection(QFrame):
         # 刷新并获取GPU信息
         gpu_manager: GPUManager = self.main_window.gpu_manager
         gpu_manager.detect_gpus()
-        selected_gpu = self.gpu_combo.currentText()
-        if selected_gpu not in gpu_manager.gpu_info_map:
+        selected_gpu_display = self.gpu_combo.currentText()
+        
+        # 从显示名称中找到对应的GPU key
+        gpu_key = GPUDisplayHelper.find_gpu_key(selected_gpu_display, gpu_manager.gpu_info_map)
+        if not gpu_key:
             UiInfoBarWarning(self, "请先选择一个GPU")
             return
 
         # 检查GPU能力
-        gpu_info = gpu_manager.gpu_info_map[selected_gpu]
-        ability = gpu_manager.check_gpu_ability(selected_gpu, model_name)
+        gpu_info = gpu_manager.gpu_info_map[gpu_key]
+        ability = gpu_manager.check_gpu_ability(selected_gpu_display, model_name)
         if not ability.is_capable:
             UiInfoBarWarning(self, ability.reason)
             return
@@ -384,6 +387,9 @@ class RunServerSection(QFrame):
         if not preset_name:
             MessageBox("错误", "预设名称不能为空", self).exec()
             return
+        
+        selected_gpu = self.gpu_combo.currentText()
+        # 如果是带有PCI ID的显示名称，保存完整的显示名称
         SETTING.set_preset(
             preset_name,
             {
@@ -391,7 +397,7 @@ class RunServerSection(QFrame):
                 "gpu_layers": self.gpu_layers_spinbox.value(),
                 "flash_attention": self.flash_attention_check.isChecked(),
                 "no_mmap": self.no_mmap_check.isChecked(),
-                "gpu": self.gpu_combo.currentText(),
+                "gpu": selected_gpu,  # 保存完整的GPU显示名称
                 "model_path": self.model_path.currentText(),
                 "context_length": self.context_length_input.value(),
                 "n_parallel": self.n_parallel_spinbox.value(),
@@ -445,7 +451,22 @@ class RunServerSection(QFrame):
                 self.ntg_input.setText(config.get("ntg", "384"))
                 self.npl_input.setText(config.get("npl", "1,2,4,8,16"))
                 self.no_mmap_check.setChecked(config.get("no_mmap", True))
-                self.gpu_combo.setCurrentText(config.get("gpu", ""))
+                
+                # 加载GPU选择，支持新旧格式
+                gpu_setting = config.get("gpu", "")
+                if gpu_setting:
+                    index = self.gpu_combo.findText(gpu_setting)
+                    if index >= 0:
+                        self.gpu_combo.setCurrentIndex(index)
+                    else:
+                        # 如果找不到完整的显示名称，尝试在当前GPU列表中查找匹配的名称部分
+                        from src.gpu import GPUDisplayHelper
+                        for i in range(self.gpu_combo.count()):
+                            current_text = self.gpu_combo.itemText(i)
+                            if GPUDisplayHelper.match_gpu_name(current_text, gpu_setting):
+                                self.gpu_combo.setCurrentIndex(i)
+                                break
+                
                 self.llamacpp_override.setText(config.get("llamacpp_override", ""))
                 self.update_context_per_thread()
                 break

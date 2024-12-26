@@ -15,7 +15,7 @@ def get_nvidia_gpus() -> List[GPUInfo]:
 
     try:
         result = subprocess.run(
-            "nvidia-smi --query-gpu=name,memory.free,memory.total --format=csv,noheader",
+            "nvidia-smi --query-gpu=name,pci.bus_id,memory.free,memory.total --format=csv,noheader",
             shell=True,
             capture_output=True,
             text=True,
@@ -24,8 +24,9 @@ def get_nvidia_gpus() -> List[GPUInfo]:
             output = result.stdout.splitlines()
             for row in csv.reader(output, delimiter=","):
                 try:
-                    name, vram_free, vram_total = row
+                    name, pci_bus_id, vram_free, vram_total = row
                     name = name.strip()
+                    pci_bus_id = pci_bus_id.strip()
 
                     # NOTE(kuriko): nvidia-smi should return MiB
                     vram_free = int(vram_free.replace(" MiB", ""))
@@ -37,6 +38,7 @@ def get_nvidia_gpus() -> List[GPUInfo]:
                         gpu_type=GPUType.NVIDIA,
                         dedicated_gpu_memory=MiBToBytes(vram_total),
                         avail_dedicated_gpu_memory=MiBToBytes(vram_free),
+                        pci_bus_id=pci_bus_id,
                     )
 
                     nvidia_gpu_info.append(gpu_info)

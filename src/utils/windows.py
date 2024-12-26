@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 class AdapterInfoFromReg:
     AdapterString: str
     MemorySize: int
+    pci_bus_id: str|None = None
 
 def get_gpu_mem_info() -> List[AdapterInfoFromReg]:
     # This key is set by miniport driver
@@ -31,9 +32,22 @@ def get_gpu_mem_info() -> List[AdapterInfoFromReg]:
                             if type(adapter_string) == bytes:
                                 adapter_string = "".join(filter(lambda x: x != '\x00', adapter_string.decode("utf-8")))
                             memory_size = winreg.QueryValueEx(subkey, "HardwareInformation.qwMemorySize")[0]
+                            
+                            # 尝试读取 PCI 总线 ID
+                            try:
+                                location_info = winreg.QueryValueEx(subkey, "LocationInformation")[0]
+                                # LocationInformation 通常包含 "PCI bus %d, device %d, function %d"
+                                if "PCI bus" in location_info:
+                                    pci_bus_id = location_info
+                                else:
+                                    pci_bus_id = None
+                            except (WindowsError, FileNotFoundError):
+                                pci_bus_id = None
+                                
                             adapter_values.append(AdapterInfoFromReg(
                                 AdapterString=adapter_string,
                                 MemorySize=memory_size,
+                                pci_bus_id=pci_bus_id
                             ))
                 except FileNotFoundError:
                     # Continue if the value doesn't exist

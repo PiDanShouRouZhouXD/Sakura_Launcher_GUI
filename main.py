@@ -134,11 +134,11 @@ class MainWindow(MSFluentWindow):
     def run_llamacpp_batch_bench(self):
         self._run_llamacpp("llama-batched-bench")
 
-    def check_gpu_ability(self, selected_gpu, model_name, context_length, n_parallel):
+    def check_gpu_ability(self, selected_gpu_display, model_name, context_length, n_parallel):
         """检查GPU能力"""
         try:
             check_result = self.gpu_manager.check_gpu_ability(
-                selected_gpu,
+                selected_gpu_display,
                 model_name,
                 context_length,
                 n_parallel,
@@ -147,7 +147,7 @@ class MainWindow(MSFluentWindow):
                 if check_result.is_fatal:
                     MessageBox(
                         "致命错误：GPU 不满足强制需求",
-                        f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
+                        f"显卡 {selected_gpu_display} 无法运行 {model_name}。\n\n"
                         f"原因：{check_result.reason}\n\n"
                         f"注：GPU能力检测对话框可以在设置中关闭",
                         self,
@@ -156,7 +156,7 @@ class MainWindow(MSFluentWindow):
                 else:
                     box = MessageBox(
                         "警告：GPU 不满足运行最低需求",
-                        f"显卡 {selected_gpu} 无法运行 {model_name}。\n\n"
+                        f"显卡 {selected_gpu_display} 无法运行 {model_name}。\n\n"
                         f"原因：{check_result.reason}\n\n"
                         f"你可以继续使用，但是运行可能发生异常\n\n"
                         f"注：GPU能力检测对话框可以在设置中关闭",
@@ -234,12 +234,15 @@ class MainWindow(MSFluentWindow):
         return True
 
     def check_launch_requirements(
-        self, selected_gpu, model_name, context_length, n_parallel
+        self, selected_gpu_display, model_name, context_length, n_parallel
     ):
         """检查启动要求"""
         # 检查GPU能力
         if not self.check_gpu_ability(
-            selected_gpu, model_name, context_length, n_parallel
+            selected_gpu_display,
+            model_name,
+            context_length,
+            n_parallel
         ):
             return False
 
@@ -269,12 +272,12 @@ class MainWindow(MSFluentWindow):
 
         # 将GPU检查提前到这里
         if section.gpu_combo.currentText() != "自动":
-            selected_gpu = section.gpu_combo.currentText()
+            selected_gpu_display = section.gpu_combo.currentText()
             selected_index = section.gpu_combo.currentIndex()
 
             # 检查启动要求
             if not self.check_launch_requirements(
-                selected_gpu,
+                selected_gpu_display,
                 model_name,
                 section.context_length_input.value(),
                 section.n_parallel_spinbox.value(),

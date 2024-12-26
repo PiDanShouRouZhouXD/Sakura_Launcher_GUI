@@ -49,6 +49,9 @@ class GPUInfo:
 
     ability: GPUAbility|None = None
 
+    # 用于区分同名GPU的PCI总线ID
+    pci_bus_id: str|None = None
+
     def merge_from(self, other: "GPUInfo"):
         other_filtered = {k: v for k, v in other.__dict__.items() if v}
         self.__dict__.update(other_filtered)

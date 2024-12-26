@@ -16,7 +16,6 @@ from qfluentwidgets import (
     LineEdit,
     Slider,
     SpinBox,
-    EditableComboBox,
     SegmentedWidget,
     PrimaryPushButton,
     PushButton,
@@ -152,12 +151,6 @@ def UiSlider(
         spinbox.setFixedWidth(spinbox_fixed_width)
 
     return h_layout
-
-
-def UiEditableComboBox(items):
-    w = EditableComboBox()
-    w.addItems(items)
-    return w
 
 
 def UiComboBox(items, on_change=None):

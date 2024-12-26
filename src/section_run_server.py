@@ -92,7 +92,7 @@ class RunServerSection(QFrame):
         )
 
     def _create_ip_port_log_option(self):
-        self.host_input = UiEditableComboBox(["127.0.0.1", "0.0.0.0"])
+        self.host_input = UiLineEdit("", "127.0.0.1")
         self.port_input = UiLineEdit("", "8080")
         self.gpu_layers_spinbox = SpinBox()
         self.gpu_layers_spinbox.setRange(0, 200)
@@ -334,7 +334,7 @@ class RunServerSection(QFrame):
         gpu_manager: GPUManager = self.main_window.gpu_manager
         gpu_manager.detect_gpus()
         selected_gpu_display = self.gpu_combo.currentText()
-        
+
         # 从显示名称中找到对应的GPU key
         gpu_key = GPUDisplayHelper.find_gpu_key(selected_gpu_display, gpu_manager.gpu_info_map)
         if not gpu_key:
@@ -387,7 +387,7 @@ class RunServerSection(QFrame):
         if not preset_name:
             MessageBox("错误", "预设名称不能为空", self).exec()
             return
-        
+
         selected_gpu = self.gpu_combo.currentText()
         # 如果是带有PCI ID的显示名称，保存完整的显示名称
         SETTING.set_preset(
@@ -401,7 +401,7 @@ class RunServerSection(QFrame):
                 "model_path": self.model_path.currentText(),
                 "context_length": self.context_length_input.value(),
                 "n_parallel": self.n_parallel_spinbox.value(),
-                "host": self.host_input.currentText(),
+                "host": self.host_input.text(),
                 "port": self.port_input.text(),
                 "npp": self.npp_input.text(),
                 "ntg": self.ntg_input.text(),
@@ -442,7 +442,7 @@ class RunServerSection(QFrame):
                 self.model_path.setCurrentText(config.get("model_path", ""))
                 self.context_length_input.setValue(config.get("context_length", 2048))
                 self.n_parallel_spinbox.setValue(config.get("n_parallel", 1))
-                self.host_input.setCurrentText(config.get("host", "127.0.0.1"))
+                self.host_input.setText(config.get("host", "127.0.0.1"))
                 self.port_input.setText(config.get("port", "8080"))
                 self.flash_attention_check.setChecked(
                     config.get("flash_attention", True)
@@ -451,7 +451,7 @@ class RunServerSection(QFrame):
                 self.ntg_input.setText(config.get("ntg", "384"))
                 self.npl_input.setText(config.get("npl", "1,2,4,8,16"))
                 self.no_mmap_check.setChecked(config.get("no_mmap", True))
-                
+
                 # 加载GPU选择，支持新旧格式
                 gpu_setting = config.get("gpu", "")
                 if gpu_setting:
@@ -466,7 +466,7 @@ class RunServerSection(QFrame):
                             if GPUDisplayHelper.match_gpu_name(current_text, gpu_setting):
                                 self.gpu_combo.setCurrentIndex(i)
                                 break
-                
+
                 self.llamacpp_override.setText(config.get("llamacpp_override", ""))
                 self.update_context_per_thread()
                 break

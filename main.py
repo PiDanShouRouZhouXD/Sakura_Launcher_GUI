@@ -309,7 +309,7 @@ class MainWindow(MSFluentWindow):
                 "-a",
                 model_name,
                 "--host",
-                section.host_input.currentText(),
+                section.host_input.text(),
                 "--port",
                 section.port_input.text(),
                 "-np",

@@ -76,7 +76,7 @@ class Setting(QObject):
     def save_settings(self):
         settings = {
             "llamacpp_path": self.llamacpp_path,
-            "model_search_path": self.model_search_paths,
+            "model_search_paths": self.model_search_paths,
             "model_sort_option": self.model_sort_option,
             "remember_window_state": self.remember_window_state,
             "remember_advanced_state": self.remember_advanced_state,

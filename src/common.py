@@ -19,7 +19,7 @@ def get_self_path():
 
 CURRENT_DIR = get_self_path()
 ICON_FILE = "icon.ico"
-CLOUDFLARED = "cloudflared-windows-amd64.exe"
+CLOUDFLARED = "cloudflared-windows-amd64.exe" if sys.platform == "win32" else "cloudflared"
 SAKURA_LAUNCHER_GUI_VERSION = "v1.1.0-beta"
 
 processes = []

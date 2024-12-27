@@ -27,6 +27,13 @@
             "version": "b3923-Vulkan",
             "gpu": "通用，不推荐",
             "require_cuda": false
+        },
+        {
+            "repo": "ggerganov/llama.cpp/releases/download/b3923",
+            "filename": "llama-b3923-bin-macos-arm64.zip",
+            "version": "b3923-Apple-M",
+            "gpu": "苹果电脑M系列核显",
+            "require_cuda": false
         }
     ],
     "sakura": [

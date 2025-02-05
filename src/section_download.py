@@ -72,7 +72,8 @@ class LoadDataThread(QThread):
         SAKURA_LIST.update_sakura_list(data_json)
         LLAMACPP_LIST.update_llamacpp_list(data_json)
 
-        repo = "PiDanShouRouZhouXD/Sakura_Launcher_GUI"
+        # repo = "PiDanShouRouZhouXD/Sakura_Launcher_GUI"
+        repo = "isaacveg/Sakura_Launcher_GUI"
         for link in [
             f"https://ghp.ci/https://raw.githubusercontent.com/{repo}/refs/heads/main/{DATA_FILE}",
             f"https://cdn.jsdelivr.net/gh/{repo}@main/{DATA_FILE}",

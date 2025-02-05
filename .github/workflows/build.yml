@@ -50,3 +50,37 @@ jobs:
         with:
           path: |
             dist
+
+  macos-latest:
+    runs-on: macos-latest
+
+    steps:
+      - name: Clone
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python Environment
+        id: pyenv
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build
+        id: pyinstaller_build
+        run: |
+          pyinstaller --clean --noconfirm main.spec
+          mv dist/main dist/Sakura_Launcher_GUI_$(echo $GITHUB_SHA | cut -c1-7)
+
+      - name: Upload artifacts
+        if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.event.inputs.create_release == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          path: |
+            dist

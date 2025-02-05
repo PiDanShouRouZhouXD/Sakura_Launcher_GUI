@@ -77,7 +77,7 @@ jobs:
         id: pyinstaller_build
         run: |
           pyinstaller --clean --noconfirm main.spec
-          mv dist/SakuraLauncher.app dist/Sakura_Launcher_GUI_$(echo $GITHUB_SHA | cut -c1-7).app  # 修改重命名逻辑
+          mv dist/SakuraLauncher.app dist/Sakura_Launcher_GUI_macOS_$(echo $GITHUB_SHA | cut -c1-7).app  # 修改重命名逻辑
 
       - name: Upload artifacts
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.event.inputs.create_release == 'true' }}

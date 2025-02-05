@@ -48,8 +48,8 @@ jobs:
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.event.inputs.create_release == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          path: |
-            dist
+          name: windows_dist
+          path: dist
 
   macos-latest:
     runs-on: macos-latest
@@ -83,5 +83,5 @@ jobs:
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.event.inputs.create_release == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          path: |
-            dist
+          name: macos_dist
+          path: dist

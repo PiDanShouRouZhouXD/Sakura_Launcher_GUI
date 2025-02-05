@@ -77,7 +77,7 @@ jobs:
         id: pyinstaller_build
         run: |
           pyinstaller --clean --noconfirm main.spec
-          mv dist/main dist/Sakura_Launcher_GUI_$(echo $GITHUB_SHA | cut -c1-7)
+          mv dist/Sakura_Launcher_GUI dist/Sakura_Launcher_GUI_$(echo $GITHUB_SHA | cut -c1-7)
 
       - name: Upload artifacts
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.event.inputs.create_release == 'true' }}

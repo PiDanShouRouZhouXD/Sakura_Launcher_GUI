@@ -72,7 +72,8 @@ class LoadDataThread(QThread):
         SAKURA_LIST.update_sakura_list(data_json)
         LLAMACPP_LIST.update_llamacpp_list(data_json)
 
-        repo = "PiDanShouRouZhouXD/Sakura_Launcher_GUI"
+        # repo = "PiDanShouRouZhouXD/Sakura_Launcher_GUI"
+        repo = "isaacveg/Sakura_Launcher_GUI"
         for link in [
             f"https://ghp.ci/https://raw.githubusercontent.com/{repo}/refs/heads/main/{DATA_FILE}",
             f"https://cdn.jsdelivr.net/gh/{repo}@main/{DATA_FILE}",
@@ -451,8 +452,12 @@ class DownloadSection(QFrame):
         self._start_download_task(task, on_finish=on_finish)
 
     def start_download_cloudflared(self):
-        filename = "cloudflared-windows-amd64.exe"
-        url = "https://github.com/cloudflare/cloudflared/releases/download/2024.10.1/cloudflared-windows-amd64.exe"
+        if sys.platform == "win32":
+            filename = "cloudflared-windows-amd64.exe"
+            url = "https://github.com/cloudflare/cloudflared/releases/download/2024.10.1/cloudflared-windows-amd64.exe"
+        elif sys.platform == "darwin":
+            filename = "cloudflared-darwin-arm64.tgz"
+            url = "https://github.com/cloudflare/cloudflared/releases/download/2024.10.1/cloudflared-darwin-arm64.tgz"
         if self.llamacpp_download_src == "GHProxy":
             url = "https://ghp.ci/" + url
 
@@ -463,7 +468,28 @@ class DownloadSection(QFrame):
         )
 
         def on_finish():
-            task.state = DownloadTaskState.SUCCESS
-            UiInfoBarSuccess(self, f"{task.name}下载成功")
+            if sys.platform == "darwin":
+                try:
+                    import tarfile
+                    # 使用正确的路径
+                    UiInfoBarSuccess(self, f"正在下载到{CURRENT_DIR}")
+                    tgz_file = os.path.join(CURRENT_DIR, filename)
+                    # 解压文件
+                    with tarfile.open(tgz_file, 'r') as tar:
+                        tar.extractall(CURRENT_DIR)
+                    UiInfoBarSuccess(self, f"解压完成")
+                    # 设置可执行权限
+                    cloudflared_path = os.path.join(CURRENT_DIR, 'cloudflared')
+                    os.chmod(cloudflared_path, 0o755)
+                    # 清理临时文件
+                    os.remove(tgz_file)
+                    task.state = DownloadTaskState.SUCCESS
+                    UiInfoBarSuccess(self, f"{task.name}下载并解压成功")
+                except Exception as e:
+                    task.state = DownloadTaskState.ERROR
+                    UiInfoBarError(self, f"{task.name}解压失败: {str(e)}")
+            else:
+                task.state = DownloadTaskState.SUCCESS
+                UiInfoBarSuccess(self, f"{task.name}下载成功")
 
         self._start_download_task(task, on_finish=on_finish)

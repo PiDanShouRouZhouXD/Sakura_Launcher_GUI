@@ -372,6 +372,17 @@ class MainWindow(MSFluentWindow):
         if sys.platform == "win32":
             command_prefix = ["start", "cmd", "/K"]
             subprocess.Popen(command_prefix + command, env=env, shell=True)
+        elif sys.platform == "darwin":
+            cmd_str = " ".join(command)
+            # 使用 osascript 执行命令，要先进入正确目录
+            apple_script = [
+                'osascript',
+                '-e',
+                f'''tell application "Terminal"
+                    do script "cd {CURRENT_DIR} && {cmd_str}"
+                end tell'''
+            ]
+            subprocess.Popen(apple_script, env=env)
         else:
             terminal = self.find_terminal()
             if not terminal:

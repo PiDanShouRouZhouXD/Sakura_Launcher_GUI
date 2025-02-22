@@ -48,5 +48,40 @@ jobs:
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.event.inputs.create_release == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          path: |
-            dist
+          name: windows_dist
+          path: dist
+
+  macos-latest:
+    runs-on: macos-latest
+
+    steps:
+      - name: Clone
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python Environment
+        id: pyenv
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pillow  # 安装 pillow 以保证图标正常转换
+
+      - name: Build
+        id: pyinstaller_build
+        run: |
+          pyinstaller --clean --noconfirm main.spec
+          mv dist/SakuraLauncher.app dist/Sakura_Launcher_GUI_macOS_$(echo $GITHUB_SHA | cut -c1-7).app  # 修改重命名逻辑
+
+      - name: Upload artifacts
+        if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.event.inputs.create_release == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos_dist
+          path: dist

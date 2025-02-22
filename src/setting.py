@@ -16,7 +16,11 @@ class Setting(QObject):
     worker_url = ""
     presets = []
     no_context_check = False
+    token = ""
+    port_override = ""
+    share_mode = "ws"  # 默认使用WebSocket模式
 
+    # 各个属性的专用信号
     llamacpp_path_changed = Signal(str)
     model_search_paths_changed = Signal(str)
     model_sort_option_changed = Signal(str)
@@ -26,6 +30,12 @@ class Setting(QObject):
     worker_url_changed = Signal(str)
     presets_changed = Signal(list)
     no_context_check_changed = Signal(bool)
+    token_changed = Signal(str)
+    port_override_changed = Signal(str)
+    share_mode_changed = Signal(str)
+
+    # 通用的值变化信号
+    value_changed = Signal(str, object)  # (key, value)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -41,12 +51,20 @@ class Setting(QObject):
             self.presets_changed,
             self.worker_url_changed,
             self.no_context_check_changed,
+            self.token_changed,
+            self.port_override_changed,
+            self.share_mode_changed,
         ]:
             sig.connect(lambda: self.save_settings())
 
     def set_value(self, name: str, value):
+        """设置值并发出相应的信号"""
         self.__setattr__(name, value)
-        self.__getattribute__(name + "_changed").emit(value)
+        # 发出专用信号
+        if hasattr(self, name + "_changed"):
+            self.__getattribute__(name + "_changed").emit(value)
+        # 发出通用信号
+        self.value_changed.emit(name, value)
 
     def set_preset(self, name: str, config):
         is_preset_exist = False
@@ -86,6 +104,9 @@ class Setting(QObject):
             "worker_url": self.worker_url,
             "运行": self.presets,
             "no_context_check": self.no_context_check,
+            "token": self.token,
+            "port_override": self.port_override,
+            "share_mode": self.share_mode,
         }
         current_settings = self._read_settings()
         current_settings.update(settings)
@@ -104,6 +125,9 @@ class Setting(QObject):
         self.presets = settings.get("运行", [])
         self.worker_url = settings.get("worker_url", "https://sakura-share.one")
         self.no_context_check = settings.get("no_context_check", False)
+        self.token = settings.get("token", "")
+        self.port_override = settings.get("port_override", "")
+        self.share_mode = settings.get("share_mode", "ws")
 
         # 兼容 v1.0.0-beta
         if type(self.model_search_paths) == list:

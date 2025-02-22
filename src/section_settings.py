@@ -216,6 +216,14 @@ class SettingsSection(QFrame):
         model_sort_combo.currentTextChanged.connect(
             lambda text: SETTING.set_value("model_sort_option", text)
         )
+        
+        # 添加共享模式选择
+        share_mode_combo = UiComboBox(["WebSocket", "隧道"])
+        share_mode_combo.setCurrentText("WebSocket" if not hasattr(SETTING, "share_mode") or SETTING.share_mode == "ws" else "隧道")
+        share_mode_combo.currentTextChanged.connect(
+            lambda text: SETTING.set_value("share_mode", "ws" if text == "WebSocket" else "tunnel")
+        )
+        
         llamacpp_path = UiLineEdit("可选，手动指定llama.cpp路径", SETTING.llamacpp_path)
         llamacpp_path.textChanged.connect(
             lambda text: SETTING.set_value("llamacpp_path", text)
@@ -238,6 +246,7 @@ class SettingsSection(QFrame):
             no_gpu_ability_check,
             no_context_check,
             UiOptionRow("模型列表排序", model_sort_combo),
+            UiOptionRow("共享模式", share_mode_combo),
             UiOptionRow("llama.cpp文件夹", llamacpp_path),
             UiOptionCol("模型搜索路径", model_search_paths),
         )

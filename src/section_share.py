@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import os
+import aiohttp
 from PySide6.QtCore import (
     Qt,
     Signal,
@@ -81,7 +82,7 @@ class AsyncWorker(QRunnable):
         asyncio.set_event_loop(loop)
         try:
             result = loop.run_until_complete(self.coro)
-            self.signals.finished.emit(result)
+            self.signals.finished.emit(result)  # 直接发送结果，不做类型判断
         except Exception as e:
             self.signals.error.emit(e)
         finally:
@@ -91,6 +92,7 @@ class AsyncWorker(QRunnable):
 class CFShareSection(QFrame):
     request_download_cloudflared = Signal()
     show_message_signal = Signal(str, str)  # (title, message)
+    status_update_signal = Signal(str)  # 添加状态更新信号
 
     def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
@@ -102,6 +104,7 @@ class CFShareSection(QFrame):
         self.state = ShareState(self)
         self.api = None  # 保持向后兼容
         self.is_closing = False  # 保持向后兼容
+        self._should_stop = False  # 添加停止标志
 
         # 初始化线程池
         self.thread_pool = QThreadPool()
@@ -118,11 +121,17 @@ class CFShareSection(QFrame):
 
         # 连接信号
         self.show_message_signal.connect(self._show_message_box)
+        self.status_update_signal.connect(self._update_status_label)  # 连接状态更新信号
 
     @Slot(str, str)
     def _show_message_box(self, title, message):
         """在主线程中显示消息框的槽函数"""
         MessageBox(title, message, self).exec_()
+
+    @Slot(str)
+    def _update_status_label(self, status):
+        """更新状态标签"""
+        self.status_label.setText(f"状态: {status}")
 
     def _init_ui(self):
         # 创建标签页切换控件
@@ -188,8 +197,42 @@ class CFShareSection(QFrame):
             lambda text: SETTING.set_value("worker_url", text.strip())
         )
 
-        self.tg_token_input = UiLineEdit("可选，从@SakuraShareBot获取，用于统计贡献")
+        self.tg_token_input = UiLineEdit("可选，从@sakura_share_one_bot获取，用于统计贡献（SGLang 启动必填）")
+        # 从设置中加载保存的token
+        if hasattr(SETTING, "token"):
+            self.tg_token_input.setText(SETTING.token)
         layout.addLayout(UiOptionRow("令牌", self.tg_token_input))
+        # 添加token自动保存
+        self.tg_token_input.textChanged.connect(
+            lambda text: SETTING.set_value("token", text.strip())
+        )
+
+        self.port_override_input = UiLineEdit("可选，用于覆盖运行面板的端口设置，SGLang启动请填30000")
+        # 从设置中加载保存的端口
+        if hasattr(SETTING, "port_override"):
+            self.port_override_input.setText(SETTING.port_override)
+        layout.addLayout(UiOptionRow("端口", self.port_override_input))
+        # 添加端口自动保存
+        self.port_override_input.textChanged.connect(
+            lambda text: SETTING.set_value("port_override", text.strip())
+        )
+
+        # 添加隧道模式相关的UI组件
+        self.tunnel_frame = QFrame()
+        tunnel_layout = QVBoxLayout(self.tunnel_frame)
+        tunnel_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.custom_tunnel_url_input = UiLineEdit("可选，自定义隧道URL")
+        if hasattr(SETTING, "custom_tunnel_url"):
+            self.custom_tunnel_url_input.setText(SETTING.custom_tunnel_url)
+        tunnel_layout.addLayout(UiOptionRow("隧道URL", self.custom_tunnel_url_input))
+        self.custom_tunnel_url_input.textChanged.connect(
+            lambda text: SETTING.set_value("custom_tunnel_url", text.strip())
+        )
+
+        layout.addWidget(self.tunnel_frame)
+        # 根据当前模式设置隧道组件的可见性
+        self.tunnel_frame.setVisible(SETTING.share_mode == "tunnel")
 
         self.status_label = QLabel("状态: 未运行")
         layout.addWidget(self.status_label)
@@ -203,29 +246,41 @@ class CFShareSection(QFrame):
             """
             <html>
             <body>
-            <h3>说明</h3>
-            <p>这是一个一键分享你本地部署的Sakura模型给其他用户（成为帕鲁）的工具，服务端部署请按照下面的仓库的文档进行。</p>
-            <p>注意：</p>
-            <ol>
-                <li><span style='color: #AA0000; font-weight: bold;'>在线排名功能暂时不可用，请耐心等待服务端升级。</span></li>
-                <li>请确保本地服务已启动。</li>
-                <li>请确保「链接」正确。</li>
-                <li>如无特殊需求，请使用默认的链接。此链接是由共享脚本开发者本人维护的。</li>
-                <li>目前仅支持Windows系统，其他系统请自行更改脚本。</li>
-                <li>目前仅支持一种模型：
+            <h2>Sakura Share - 模型共享工具</h2>
+            
+            <p>这是一个让你快速将本地部署的Sakura模型分享给其他用户的工具（成为帕鲁）。</p>
+            
+            <h3>支持的模型</h3>
+            <ul>
+                <li>sakura-14b-qwen2.5-v1.0-iq4xs.gguf</li>
+                <li>sakura-14b-qwen2.5-v1.0-q6k.gguf</li>
+                <li>SakuraLLM.Sakura-14B-Qwen2.5-v1.0-W8A8-Int8
+                    <small>（需要使用SGLang启动，并需要申请白名单权限）</small>
+                </li>
+            </ul>
+            
+            <h3>重要说明</h3>
+            <ul>
+                <li>建议使用默认链接 - 由共享脚本开发者维护，稳定可靠</li>
+                <li>双向使用 - 你可以选择成为帕鲁分享模型，也可以作为用户访问其他帕鲁的模型
+                    <small>（但不保证服务的可用性与稳定性）</small>
+                </li>
+                <li><b>匿名分享 - 分享时不填写「令牌」，就可以匿名分享算力</b></li>
+                <li>如果无法正常链接到服务器，请尝试将「链接」更改为 <a href='https://cf.sakura-share.one'>https://cf.sakura-share.one</a></li>
+            </ul>
+            
+            <h3>贡献统计说明</h3>
+            <ul>
+                <li>参与方式：
                     <ul>
-                        <li>sakura-14b-qwen2.5-v1.0-iq4xs.gguf</li>
+                        <li>通过 <a href='https://t.me/sakura_share_one_bot'>@sakura_share_one_bot</a> 获取「令牌（Token）」</li>
+                        <li>贡献统计为可选功能（W8A8模型必需）</li>
+                        <li>在「在线排名」标签中可查看贡献排名（显示前10名）</li>
+                        <li>查看全网算力情况：<a href='https://sakura-share.one/'>算力公示板</a></li>
                     </ul>
                 </li>
-                <li>当你不想成为帕鲁的时候，也可以通过这个链接来访问其他帕鲁的模型，但不保证服务的可用性与稳定性。</li>
-            </ol>
-            <p>关于贡献统计：</p>
-            <ol>
-                <li>贡献统计是可选的，如果你不希望参与贡献统计，可以不填写「令牌」。</li>
-                <li>贡献统计需要你从<a href='https://t.me/SakuraShareBot'>@SakuraShareBot</a>获取「令牌（Token）」，并在此处填写。</li>
-                <li>可以在「在线排名」标签中查看贡献排名。</li>
-                <li>具体说明请参考<a href='https://github.com/1PercentSync/sakura-share'>Sakura Share</a>。</li>
-            </ol>
+                <li>详细文档请参考：<a href='https://www.youtube.com/watch?v=dQw4w9WgXcQ'>Sakura Share</a></li>
+            </ul>
             </body>
             </html>
             """
@@ -243,20 +298,19 @@ class CFShareSection(QFrame):
         )
         layout.addWidget(description)
 
-        sakura_share_url = "https://github.com/1PercentSync/sakura-share"
-        link = QLabel(f"<a href='{sakura_share_url}'>点击前往仓库</a>")
-        link.setOpenExternalLinks(True)
-        link.setAlignment(Qt.AlignCenter)
-        link.setStyleSheet(
-            """
-            QLabel {
-                padding: 10px;
-            }
-        """
-        )
-        layout.addWidget(link)
-
         layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+
+        # 监听共享模式变化
+        SETTING.value_changed.connect(self._on_setting_changed)
+
+    def _on_setting_changed(self, key, value):
+        """处理设置变化"""
+        if key == "share_mode":
+            # 更新隧道相关UI组件的可见性
+            self.tunnel_frame.setVisible(value == "tunnel")
+            # 如果正在运行，提示需要重启
+            if self.api and self.api.is_running:
+                UiInfoBarWarning(self, "修改共享模式后需要重新启动分享才能生效。")
 
     def init_metrics_page(self):
         """初始化指标统计页面"""
@@ -325,8 +379,8 @@ class CFShareSection(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
 
         self.ranking_table = TableWidget(self)
-        self.ranking_table.setColumnCount(2)
-        self.ranking_table.setHorizontalHeaderLabels(["用户名", "计数"])
+        self.ranking_table.setColumnCount(3)
+        self.ranking_table.setHorizontalHeaderLabels(["用户名", "生成Token数", "在线时长(小时)"])
         self.ranking_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         layout.addWidget(self.ranking_table)
@@ -396,57 +450,47 @@ class CFShareSection(QFrame):
     @Slot()
     def start_cf_share(self):
         """启动共享功能"""
-        # 检查cloudflared是否存在
-        cloudflared_path = os.path.join(CURRENT_DIR, CLOUDFLARED)
-        if not os.path.exists(cloudflared_path):
-            UiInfoBarWarning(self, "未检测到Cloudflared，请等待下载完成后再上线。")
-            self.request_download_cloudflared.emit()
-            return
-
         # 检查必要参数
         worker_url = self.worker_url_input.text().strip()
         if not worker_url:
             MessageBox("错误", "请输入WORKER_URL", self).exec_()
             return
 
-        port = self.main_window.run_server_section.port_input.text().strip()
-        if not port:
-            MessageBox("错误", "请在运行面板中设置端口号", self).exec_()
-            return
+        # 优先使用端口设置
+        port_override = self.port_override_input.text().strip()
+        if port_override:
+            try:
+                port = int(port_override)
+            except ValueError:
+                MessageBox("错误", "端口设置必须是有效的数字", self).exec_()
+                return
+        else:
+            port = self.main_window.run_server_section.port_input.text().strip()
+            if not port:
+                MessageBox("错误", "请在运行面板中设置端口号或使用端口覆盖", self).exec_()
+                return
+            try:
+                port = int(port)
+            except ValueError:
+                MessageBox("错误", "端口号必须是有效的数字", self).exec_()
+                return
 
-        # 初始化API
-        self.api = SakuraShareAPI(int(port), worker_url)
-        self.state.update_api(self.api)
+        # 保存参数
+        self.port = port
+        self.worker_url = worker_url
+        self.share_mode = getattr(SETTING, "share_mode", "ws")
+        self.tg_token = self.tg_token_input.text().strip()
+        self.custom_tunnel_url = self.custom_tunnel_url_input.text().strip()
 
-        async def start_sharing():
-            # 检查本地服务状态
-            if not await self.api.check_local_health_status():
-                self.show_message_signal.emit("错误", "本地服务未运行")
-                return None
-
-            # 启动cloudflare隧道
-            await self.api.start_cloudflare_tunnel(cloudflared_path)
-            if self.api.tunnel_url is None:
-                self.show_message_signal.emit("错误", "无法获取隧道URL")
-                return None
-
-            self.update_status(f"正在注册节点 - {self.api.tunnel_url}")
-            await asyncio.sleep(5)  # 延迟5秒钟
-
-            # 注册节点
-            success = await self.api.register_node(self.tg_token_input.text().strip())
-            if not success:
-                self.show_message_signal.emit(
-                    "错误", "无法注册节点，请检查网络连接或稍后重试"
-                )
-                return None
-
-            return f"运行中 - {self.api.tunnel_url}"
-
-        # 启动异步任务
-        worker = AsyncWorker(start_sharing())
-        worker.signals.finished.connect(self.on_start_finished)
-        worker.signals.error.connect(self.on_error)
+        # 重置停止标志
+        self._should_stop = False
+        
+        # 创建并启动worker
+        worker = AsyncWorker(self.start_sharing())
+        worker.signals.finished.connect(self._handle_connection_status)
+        
+        # 保存worker引用
+        self._current_worker = worker
         self.thread_pool.start(worker)
 
         # 更新UI状态
@@ -454,131 +498,133 @@ class CFShareSection(QFrame):
         self.stop_button.setEnabled(True)
         self.status_label.setText("状态: 正在启动...")
 
-        # 启动定时器
-        QMetaObject.invokeMethod(self.metrics_timer, "start", Qt.QueuedConnection)
-        QMetaObject.invokeMethod(self.reregister_timer, "start", Qt.QueuedConnection)
+    async def start_sharing(self):
+        try:
+            # 初始化API
+            self.api = SakuraShareAPI(self.port, self.worker_url, self.share_mode)
+            self.state.update_api(self.api)
+            
+            # 检查本地服务状态
+            if not await self.api.check_local_health_status():
+                return "错误：本地服务未运行"
 
-    @Slot(object)
-    def on_start_finished(self, status):
-        """处理启动操作完成"""
-        if status is None:
-            self.start_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
-            self.status_label.setText("状态: 启动失败")
-            return
+            # 检查是否为SGLang服务
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"http://localhost:{self.port}/get_model_info", timeout=5) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            if "model_path" in data and "W8A8" in data["model_path"]:
+                                if not self.tg_token:
+                                    return "错误：检测到SGLang W8A8模型，必须填写令牌"
+            except Exception:
+                pass
 
-        self.update_status(status)
-        UiInfoBarSuccess(self, "已经成功启动分享。")
+            # 获取启动参数
+            start_params = {
+                "tg_token": self.tg_token
+            }
+
+            # 如果是隧道模式，添加隧道相关参数
+            if self.share_mode == "tunnel":
+                if self.custom_tunnel_url:
+                    start_params["custom_tunnel_url"] = self.custom_tunnel_url
+                elif os.path.exists(CLOUDFLARED):
+                    start_params["cloudflared_path"] = CLOUDFLARED
+                else:
+                    return "错误：隧道模式下必须提供自定义隧道URL或安装cloudflared"
+
+            # 启动服务
+            if not await self.api.start(**start_params):
+                return "错误：启动失败，请检查配置和网络连接"
+
+            # 发送初始状态
+            mode_str = "WebSocket已连接" if self.share_mode == "ws" else f"隧道已连接 - {self.api.tunnel_url}"
+            self.status_update_signal.emit(f"运行中 - {mode_str}")
+
+            # 启动定时器
+            self.metrics_timer.start()
+            self.reregister_timer.start()
+
+            # 保持连接活跃
+            while not self._should_stop:
+                await asyncio.sleep(5)  # 每5秒检查一次
+                if not self.api or not self.api.is_running:
+                    return "错误：连接已断开"
+                
+                # 定期检查连接状态
+                try:
+                    if not await self.api.check_local_health_status():
+                        return "错误：本地服务已断开"
+                except Exception as e:
+                    return f"错误：连接检查失败 - {str(e)}"
+
+            return "正常停止"
+
+        except Exception as e:
+            print(f"[Share] 启动错误: {e}")
+            return f"错误：{str(e)}"
+
+    def _handle_connection_status(self, status):
+        """处理连接状态更新"""
+        if isinstance(status, str):
+            if status.startswith("错误"):
+                self.status_label.setText(f"状态: {status}")
+                self.start_button.setEnabled(True)
+                self.stop_button.setEnabled(False)
+                UiInfoBarError(self, status)
+            else:
+                self.status_label.setText(f"状态: {status}")
+                if status == "正常停止":
+                    self.start_button.setEnabled(True)
+                    self.stop_button.setEnabled(False)
+                    self.metrics_timer.stop()
+                    self.reregister_timer.stop()
 
     @Slot()
     def stop_cf_share(self):
-        """停止共享功能"""
-        if self.api and not self.is_closing:
-
-            async def stop_sharing():
-                try:
-                    # 标记正在下线
-                    self.is_closing = True
-                    self.state.is_closing = True
-
-                    success = await self.api.take_node_offline()
-                    if not success:
-                        self.show_message_signal.emit("警告", "节点下线可能未完全成功")
-                except Exception as e:
-                    print(f"Error taking node offline: {str(e)}")  # 使用print打印错误信息，因为这时候主线程已经退出
-                finally:
-                    self.api.stop()
-                return "已停止"
-
-            # 启动异步任务
-            worker = AsyncWorker(stop_sharing())
-            worker.signals.finished.connect(self.on_stop_finished)
-            worker.signals.error.connect(self.on_error_stop)  # 使用专门的错误处理器
-            self.thread_pool.start(worker)
-
-            # 更新UI状态
-            self.start_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
-            self.status_label.setText("状态: 正在下线...")
-
-            # 停止定时器
-            QMetaObject.invokeMethod(self.metrics_timer, "stop", Qt.QueuedConnection)
-            QMetaObject.invokeMethod(self.reregister_timer, "stop", Qt.QueuedConnection)
-        else:
-            print("API未初始化或正在关闭")  # 使用print打印信息，因为这时候主线程已经退出
-
-    @Slot(Exception)
-    def on_error_stop(self, error):
-        """处理停止操作时的错误"""
-        logging.error(f"停止操作发生错误: {str(error)}")
-        self.show_message_signal.emit("错误", f"停止操作失败: {str(error)}")
-
-        # 确保清理完成
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.status_label.setText("状态: 停止失败")
-
+        """停止共享服务"""
+        self._should_stop = True
+        
         if self.api:
-            self.api.stop()
-            self.api = None
-
-    @Slot(object)
-    def on_stop_finished(self, status):
-        """处理停止操作完成"""
-        self.start_button.setEnabled(True)
+            async def stop_api():
+                api = self.api  # 保存当前API引用
+                try:
+                    # 先将self.api设为None，避免其他地方继续使用
+                    self.api = None
+                    # 使用保存的引用执行停止操作
+                    await api.stop()
+                    await api.take_node_offline()
+                except Exception as e:
+                    print(f"[Share] 停止错误: {e}")
+            
+            worker = AsyncWorker(stop_api())
+            worker.signals.finished.connect(self._handle_stop_finished)
+            worker.signals.error.connect(self._handle_stop_error)
+            self.thread_pool.start(worker)
+        
+        # 更新UI状态
+        self.status_label.setText("状态: 正在停止...")
+        self.start_button.setEnabled(False)
         self.stop_button.setEnabled(False)
-        self.status_label.setText(f"状态: {status}")
-        self.api = None  # 清除API实例
-        UiInfoBarSuccess(self, "已成功停止分享。")
-
-    @Slot(str)
-    def update_status(self, status):
-        """更新状态显示"""
-        self.status_label.setText(f"状态: {status}")
 
     @Slot(Exception)
-    def on_error(self, error):
-        """处理一般错误"""
-        logging.error(str(error))
+    def _handle_stop_error(self, error):
+        """处理停止时的错误"""
+        print(f"[Share] 停止过程中发生错误: {error}")
+        self._handle_stop_finished()  # 仍然执行清理操作
 
-        async def check_and_retry():
-            if not self.api:
-                self.show_message_signal.emit("错误", str(error))
-                return None
-
-            try:
-                if await self.api.check_local_health_status():
-                    # 本地服务正常,尝试重新注册
-                    self.status_label.setText(
-                        "状态: 检测到本地服务正常,尝试重新连接..."
-                    )
-                    success = await self.api.register_node(
-                        self.tg_token_input.text().strip()
-                    )
-                    if success:
-                        status = f"状态: 运行中 - {self.api.tunnel_url}"
-                        self.status_label.setText(status)
-                        UiInfoBarSuccess(self, "重新连接成功。")
-                        return status
-            except Exception as e:
-                logging.error(f"重试过程发生错误: {str(e)}")
-
-            # 如果重试失败或发生异常，执行下线流程
-            self.stop_cf_share()
-            self.show_message_signal.emit("错误", str(error))
-            return None
-
-        worker = AsyncWorker(check_and_retry())
-        worker.signals.finished.connect(self.on_retry_finished)
-        self.thread_pool.start(worker)
-
-    @Slot(object)
-    def on_retry_finished(self, status):
-        """处理重试操作完成"""
-        if status is None:
-            self.start_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
-            self.status_label.setText("状态: 重试失败")
+    def _handle_stop_finished(self):
+        """处理停止完成"""
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.status_label.setText("状态: 已停止")
+        self.metrics_timer.stop()
+        self.reregister_timer.stop()
+        
+        # 确保API被清理
+        self.api = None
+        self.state.api = None
 
     @Slot()
     def refresh_slots(self):
@@ -628,17 +674,19 @@ class CFShareSection(QFrame):
     @Slot(object)
     def update_ranking(self, ranking_data):
         """更新排名数据"""
-        if "error" in ranking_data:
-            MessageBox("错误", f"获取排名失败: {ranking_data['error']}", self).exec_()
-        else:
+        if isinstance(ranking_data, list) and len(ranking_data) > 0 and "error" not in ranking_data[0]:
             self.ranking_table.setRowCount(0)
-            for username, count in sorted(
-                ranking_data.items(), key=lambda item: int(item[1]), reverse=True
-            ):
+            for item in ranking_data:
                 row = self.ranking_table.rowCount()
                 self.ranking_table.insertRow(row)
-                self.ranking_table.setItem(row, 0, QTableWidgetItem(username))
-                self.ranking_table.setItem(row, 1, QTableWidgetItem(str(count)))
+                self.ranking_table.setItem(row, 0, QTableWidgetItem(item["name"]))
+                self.ranking_table.setItem(row, 1, QTableWidgetItem(f"{item['token_count']:,}"))
+                # 将在线时间从秒转换为小时，并保留两位小数
+                online_hours = item["online_time"] / 3600
+                self.ranking_table.setItem(row, 2, QTableWidgetItem(f"{online_hours:.2f}"))
+        else:
+            error_msg = ranking_data[0]["error"] if isinstance(ranking_data, list) else "未知错误"
+            MessageBox("错误", f"获取排名失败: {error_msg}", self).exec_()
 
         self.refresh_ranking_button.setEnabled(True)
 

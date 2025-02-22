@@ -3,7 +3,6 @@ import argparse
 import logging
 import os
 import signal
-import psutil
 import sys
 from typing import Optional
 
@@ -17,12 +16,17 @@ async def main():
     parser.add_argument("--worker-url", type=str, default="https://sakura-share.one", required=False, help="Worker URL, default is https://sakura-share.one")
     parser.add_argument("--tg-token", type=str, help="Telegram token (optional)")
     parser.add_argument("--action", choices=["start", "stop", "status", "metrics", "ranking"], required=True, help="Action to perform")
-    parser.add_argument("--cloudflared-path", type=str, help="Path to cloudflared executable, required if not using custom tunnel URL")
-    parser.add_argument("--custom-tunnel-url", type=str, help="Custom tunnel URL (optional)")
+    parser.add_argument("--mode", choices=["ws", "tunnel"], default="tunnel", help="Operation mode: ws (WebSocket) or tunnel (default)")
+    parser.add_argument("--cloudflared-path", type=str, help="Path to cloudflared executable (required for tunnel mode if custom-tunnel-url not provided)")
+    parser.add_argument("--custom-tunnel-url", type=str, help="Custom tunnel URL (optional for tunnel mode)")
 
     args = parser.parse_args()
 
-    api = SakuraShareAPI(args.port, args.worker_url)
+    # 验证参数
+    if args.action == "start" and args.mode == "tunnel" and not (args.cloudflared_path or args.custom_tunnel_url):
+        parser.error("在tunnel模式下必须提供--cloudflared-path或--custom-tunnel-url参数")
+
+    api = SakuraShareAPI(args.port, args.worker_url, args.mode)
 
     if args.action == "start":
         await start_sharing(api, args.tg_token, args.cloudflared_path, args.custom_tunnel_url)
@@ -35,7 +39,7 @@ async def main():
     elif args.action == "ranking":
         await get_ranking(api)
 
-async def start_sharing(api: SakuraShareAPI, tg_token: str, cloudflared_path: str, custom_tunnel_url: Optional[str] = None):
+async def start_sharing(api: SakuraShareAPI, tg_token: str, cloudflared_path: Optional[str] = None, custom_tunnel_url: Optional[str] = None):
     stop_event = asyncio.Event()
     
     def signal_handler():
@@ -51,13 +55,9 @@ async def start_sharing(api: SakuraShareAPI, tg_token: str, cloudflared_path: st
         signal.signal(signal.SIGTERM, lambda s, f: signal_handler())
 
     try:
-        tunnel_url = await api.start_tunnel(cloudflared_path, custom_tunnel_url)
-        # 保存进程 ID 到文件（仅适用于cloudflared）
-        if not custom_tunnel_url:
-            with open("cloudflared_pid.txt", "w") as f:
-                f.write(str(os.getpid()))
-        if await api.register_node(tg_token):
+        if await api.start(cloudflared_path, custom_tunnel_url, tg_token):
             print("成功启动分享")
+            
             while not stop_event.is_set():
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=600)
@@ -66,53 +66,24 @@ async def start_sharing(api: SakuraShareAPI, tg_token: str, cloudflared_path: st
                         print("重新连接失败，停止分享")
                         break
         else:
-            print("无法注册节点，请检查网络连接或稍后重试")
+            print("启动失败，请检查配置和网络连接")
     except Exception as e:
         print(f"启动失败: {str(e)}")
     finally:
         print("正在停止分享...")
-        await api.take_node_offline()
-        if os.path.exists("cloudflared_pid.txt"):
-            os.remove("cloudflared_pid.txt")
         api.stop()
+        await api.take_node_offline()
         print("已成功停止分享")
 
 async def stop_sharing(api: SakuraShareAPI):
     try:
-        # 从文件中读取进程 ID
-        with open("cloudflared_pid.txt", "r") as f:
-            pid = int(f.read().strip())
-        
-        # 尝试终止进程
-        try:
-            os.kill(pid, signal.SIGTERM)
-            print(f"已发送终止信号到进程 {pid}")
-        except ProcessLookupError:
-            print(f"进程 {pid} 不存在")
-        except PermissionError:
-            print(f"没有权限终止进程 {pid}")
-        
-        # 等待进程结束
-        try:
-            psutil.wait_procs([psutil.Process(pid)], timeout=5)
-            print(f"进程 {pid} 已成功终止")
-        except psutil.NoSuchProcess:
-            print(f"进程 {pid} 已不存在")
-        except psutil.TimeoutExpired:
-            print(f"进程 {pid} 未能在超时时间内终止，尝试强制终止")
-            os.kill(pid, signal.SIGKILL)
-        
-        # 删除 PID 文件
-        os.remove("cloudflared_pid.txt")
-        api.tunnel_url = await api.get_tunnel_url()
+        api.stop()
         if await api.take_node_offline():
             print("已停止分享")
         else:
             print("停止分享失败")
-    except FileNotFoundError:
-        print("未找到 PID 文件，可能 Cloudflare 隧道未在运行")
-    except ValueError:
-        print("PID 文件内容无效")
+    except Exception as e:
+        print(f"停止分享时发生错误: {str(e)}")
 
 async def get_status(api: SakuraShareAPI):
     status = await api.get_slots_status()

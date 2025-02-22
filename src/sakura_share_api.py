@@ -2,7 +2,8 @@ import logging
 import re
 import asyncio
 import aiohttp
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from .sakura_ws_client import SakuraWSClient
 
 class SakuraShareAPI:
     """
@@ -11,15 +12,22 @@ class SakuraShareAPI:
     参数:
         port (int): 本地服务运行的端口号。
         worker_url (str): Worker服务的URL地址。
+        mode (str): 运行模式，可选 'ws' 或 'tunnel'
     """
 
-    def __init__(self, port: int, worker_url: str):
+    def __init__(self, port: int, worker_url: str, mode: str = 'ws'):
+        print(f"[API] 初始化API: port={port}, worker_url={worker_url}, mode={mode}")
+        if mode not in ['ws', 'tunnel']:
+            raise ValueError("mode必须是'ws'或'tunnel'之一")
         self.port = port
         self.worker_url = worker_url.rstrip('/')
+        self.mode = mode
         self.cloudflared_process = None
         self.tunnel_url = None
         self.is_running = False
         self.is_closing = False
+        self.ws_client = None
+        self._ws_task = None
 
     async def start_cloudflare_tunnel(self, cloudflared_path: str):
         """
@@ -90,12 +98,26 @@ class SakuraShareAPI:
         检查本地服务的健康状态。
         
         返回:
-            bool: 如果健康状态为“ok”或“no slot available”，则返回True，否则返回False。
+            bool: 如果健康状态正常则返回True，否则返回False。
+            
+        说明:
+            支持两种格式：
+            1. LlamaCpp格式: {"status": "ok"/"no slot available"}
+            2. SGLang格式: 直接返回 200 状态码
         """
-        health_url = f"http://localhost:{self.port}/health"
+        # 先尝试 SGLang 的 /health 接口
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(health_url, timeout=5) as response:
+                async with session.get(f"http://localhost:{self.port}/health", timeout=5) as response:
+                    if response.status == 200:
+                        return True
+        except Exception:
+            pass
+
+        # 如果不是 SGLang，尝试 LlamaCpp 的健康检查格式
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"http://localhost:{self.port}/health", timeout=5) as response:
                     data = await response.json()
                     return data["status"] in ["ok", "no slot available"]
         except Exception:
@@ -111,12 +133,16 @@ class SakuraShareAPI:
         返回:
             bool: 如果注册成功则返回True，否则返回False。
         """
+        if self.mode == 'ws':
+            # WebSocket模式下不需要注册节点
+            return True
+
         max_retries = 3
         for attempt in range(max_retries):
             try:
                 json_data = {
                     "url": self.tunnel_url,
-                    "tg_token": tg_token,
+                    "token": tg_token,
                 }
                 json_data = {k: v for k, v in json_data.items() if v is not None}
 
@@ -145,20 +171,33 @@ class SakuraShareAPI:
         返回:
             bool: 如果成功下线则返回True，否则返回False。
         """
+        if self.mode == 'ws':
+            # WebSocket模式下不需要下线操作
+            return True
+            
+        print("[API] 开始执行节点下线")
         if self.is_closing:
+            print("[API] 节点已经在关闭中，跳过下线操作")
             return False
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.worker_url}/delete-node",
-                    json={"url": self.tunnel_url},
-                    headers={"Content-Type": "application/json"},
-                ) as response:
-                    response_text = await response.text()
-                    print(f"节点下线响应: {response_text}")
-                    return True
+            print(f"[API] 准备发送下线请求到: {self.worker_url}/delete-node")
+            timeout = aiohttp.ClientTimeout(total=10)  # 设置10秒超时
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    print(f"[API] 发送POST请求，tunnel_url={self.tunnel_url}")
+                    async with session.post(
+                        f"{self.worker_url}/delete-node",
+                        json={"url": self.tunnel_url},
+                        headers={"Content-Type": "application/json"},
+                    ) as response:
+                        response_text = await response.text()
+                        print(f"[API] 节点下线响应: status={response.status}, response={response_text}")
+                        return response.status == 200
+                except aiohttp.ClientError as e:
+                    print(f"[API] 节点下线请求失败：{str(e)}")
+                    return False
         except Exception as e:
-            print(f"节点下线失败：{str(e)}")
+            print(f"[API] 节点下线过程发生错误：{str(e)}")
             return False
 
     async def get_slots_status(self) -> str:
@@ -181,23 +220,45 @@ class SakuraShareAPI:
         except Exception as e:
             return f"在线slot数量: 获取失败 - {str(e)}"
 
-    async def get_ranking(self) -> Dict[str, Any]:
+    async def get_ranking(self) -> List[Dict[str, Any]]:
         """
         获取当前排名信息。
         
         返回:
-            Dict[str, Any]: 包含排名信息的字典，如果获取失败则返回错误信息。
+            List[Dict[str, Any]]: 包含排名信息的列表，如果获取失败则返回包含错误信息的字典。
+            返回格式示例：
+            [
+                {
+                    "name": "用户名",
+                    "token_count": 1000,
+                    "online_time": 3600
+                }
+            ]
         """
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.worker_url}/ranking") as response:
-                    data = await response.json()
-                    if isinstance(data, dict):
-                        return data
-                    else:
-                        return {"error": "数据格式错误"}
-        except Exception as e:
-            return {"error": f"获取失败 - {str(e)}"}
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"[API] 尝试获取排名数据 (尝试 {attempt + 1}/{max_retries})")
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"{self.worker_url}/rank") as response:
+                        print(f"[API] 排名请求状态码: {response.status}")
+                        data = await response.json()
+                        print(f"[API] 获取到的排名数据: {data}")
+                        if isinstance(data, list):
+                            return data
+                        else:
+                            last_error = f"数据格式错误: {data}"
+                            print(f"[API] {last_error}")
+            except Exception as e:
+                last_error = str(e)
+                print(f"[API] 获取排名失败 (尝试 {attempt + 1}/{max_retries}): {last_error}")
+                
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2)  # 在重试之间等待2秒
+                
+        return [{"error": f"获取失败 - {last_error}"}]
 
     async def get_metrics(self) -> Dict[str, Any]:
         """
@@ -276,17 +337,94 @@ class SakuraShareAPI:
         else:
             raise Exception("必须提供cloudflared路径或自定义隧道URL")
 
-    def stop(self):
+    async def start_ws_client(self, token: Optional[str] = None):
+        """启动WebSocket客户端"""
+        print("[API] 开始启动WebSocket客户端")
+        if self.ws_client:
+            print("[API] WebSocket客户端已存在，跳过启动")
+            return
+            
+        print(f"[API] 创建新的WebSocket客户端: port={self.port}, worker_url={self.worker_url}, token={'有token' if token else '无token'}")
+        self.ws_client = SakuraWSClient(
+            f"http://localhost:{self.port}",
+            self.worker_url,
+            token
+        )
+        print("[API] 创建WebSocket客户端任务")
+        self._ws_task = asyncio.create_task(self.ws_client.start())
+        self.is_running = True
+        print("[API] WebSocket客户端启动完成")
+        return "ws_connected"
+
+    async def start(self, cloudflared_path: Optional[str] = None, custom_tunnel_url: Optional[str] = None, tg_token: Optional[str] = None) -> bool:
         """
-        停止隧道并清理相关资源。
+        根据模式启动服务。
+        
+        参数:
+            cloudflared_path (Optional[str]): cloudflared可执行文件的路径，tunnel模式下可选。
+            custom_tunnel_url (Optional[str]): 自定义隧道的URL，tunnel模式下可选。
+            tg_token (Optional[str]): Telegram Token，可选参数。
+            
+        返回:
+            bool: 如果启动成功则返回True，否则返回False。
         """
+        try:
+            if self.mode == 'tunnel':
+                # 启动隧道
+                if custom_tunnel_url:
+                    self.tunnel_url = await self.start_custom_tunnel(custom_tunnel_url)
+                elif cloudflared_path:
+                    self.tunnel_url = await self.start_cloudflare_tunnel(cloudflared_path)
+                else:
+                    raise Exception("tunnel模式下必须提供cloudflared路径或自定义隧道URL")
+                
+                # 注册节点
+                if not await self.register_node(tg_token):
+                    return False
+                    
+            # 启动WebSocket客户端（两种模式都需要）
+            await self.start_ws_client(tg_token)
+            self.is_running = True
+            return True
+            
+        except Exception as e:
+            print(f"[API] 启动失败: {str(e)}")
+            return False
+            
+    async def stop(self):
+        """停止服务并清理资源"""
+        print("[API] 开始停止API服务")
         self.is_closing = True
-        if self.cloudflared_process:
+        
+        # 停止WebSocket客户端
+        if self.ws_client:
+            print("[API] 停止WebSocket客户端")
+            await self.ws_client.stop()
+            self.ws_client = None
+            print("[API] WebSocket客户端已停止")
+            
+        if self._ws_task:
+            print("[API] 取消WebSocket任务")
+            self._ws_task.cancel()
+            try:
+                await self._ws_task
+            except asyncio.CancelledError:
+                pass
+            self._ws_task = None
+            print("[API] WebSocket任务已取消")
+            
+        # 停止Cloudflared（仅tunnel模式）
+        if self.mode == 'tunnel' and self.cloudflared_process:
+            print("[API] 停止Cloudflared进程")
             try:
                 self.cloudflared_process.terminate()
-            except Exception:
+                print("[API] Cloudflared进程已终止")
+            except Exception as e:
+                print(f"[API] Cloudflared进程终止失败，尝试强制终止: {e}")
                 self.cloudflared_process.kill()
-                print("Cloudflare 隧道进程终止失败，强制终止")
+                print("[API] Cloudflared进程已强制终止")
+                
         self.cloudflared_process = None
         self.is_running = False
         self.tunnel_url = None
+        print("[API] API服务停止完成")

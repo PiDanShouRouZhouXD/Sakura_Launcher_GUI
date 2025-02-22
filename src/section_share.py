@@ -36,6 +36,7 @@ from .common import CLOUDFLARED, CURRENT_DIR, get_resource_path
 from .sakura_share_api import SakuraShareAPI
 from .setting import SETTING
 from .ui import *
+from .section_settings import LogHandler
 
 
 class ShareState(QObject):
@@ -93,6 +94,8 @@ class CFShareSection(QFrame):
     request_download_cloudflared = Signal()
     show_message_signal = Signal(str, str)  # (title, message)
     status_update_signal = Signal(str)  # 添加状态更新信号
+    start_timers_signal = Signal()  # 添加新的信号
+    stop_timers_signal = Signal()  # 添加停止定时器信号
 
     def __init__(self, title, main_window, parent=None):
         super().__init__(parent)
@@ -122,6 +125,8 @@ class CFShareSection(QFrame):
         # 连接信号
         self.show_message_signal.connect(self._show_message_box)
         self.status_update_signal.connect(self._update_status_label)  # 连接状态更新信号
+        self.start_timers_signal.connect(self._start_timers)
+        self.stop_timers_signal.connect(self._stop_timers)
 
     @Slot(str, str)
     def _show_message_box(self, title, message):
@@ -397,8 +402,27 @@ class CFShareSection(QFrame):
             MessageBox("错误", "请先设置链接", self).exec_()
             return
 
+        # 优先使用端口设置
+        port_override = self.port_override_input.text().strip()
+        if port_override:
+            try:
+                port = int(port_override)
+            except ValueError:
+                MessageBox("错误", "端口设置必须是有效的数字", self).exec_()
+                return
+        else:
+            port = self.main_window.run_server_section.port_input.text().strip()
+            if not port:
+                MessageBox("错误", "请在运行面板中设置端口号或使用端口覆盖", self).exec_()
+                return
+            try:
+                port = int(port)
+            except ValueError:
+                MessageBox("错误", "端口号必须是有效的数字", self).exec_()
+                return
+
         self.refresh_metrics_button.setEnabled(False)
-        api = self.api if self.api else SakuraShareAPI(0, worker_url)
+        api = self.api if self.api else SakuraShareAPI(port, worker_url)
 
         worker = AsyncWorker(api.get_metrics())
         worker.signals.finished.connect(self.on_metrics_refreshed)
@@ -448,6 +472,18 @@ class CFShareSection(QFrame):
             item.setText(str(value))
 
     @Slot()
+    def _start_timers(self):
+        """在主线程中启动定时器"""
+        self.metrics_timer.start()
+        self.reregister_timer.start()
+
+    @Slot()
+    def _stop_timers(self):
+        """在主线程中停止定时器"""
+        self.metrics_timer.stop()
+        self.reregister_timer.stop()
+
+    @Slot()
     def start_cf_share(self):
         """启动共享功能"""
         # 检查必要参数
@@ -492,7 +528,7 @@ class CFShareSection(QFrame):
         # 保存worker引用
         self._current_worker = worker
         self.thread_pool.start(worker)
-
+        
         # 更新UI状态
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
@@ -541,26 +577,25 @@ class CFShareSection(QFrame):
             # 发送初始状态
             mode_str = "WebSocket已连接" if self.share_mode == "ws" else f"隧道已连接 - {self.api.tunnel_url}"
             self.status_update_signal.emit(f"运行中 - {mode_str}")
-
-            # 启动定时器
-            self.metrics_timer.start()
-            self.reregister_timer.start()
-
+            
+            # 使用信号在主线程中启动定时器
+            self.start_timers_signal.emit()
+            
             # 保持连接活跃
             while not self._should_stop:
-                await asyncio.sleep(5)  # 每5秒检查一次
+                await asyncio.sleep(60)
                 if not self.api or not self.api.is_running:
                     return "错误：连接已断开"
-                
-                # 定期检查连接状态
-                try:
-                    if not await self.api.check_local_health_status():
-                        return "错误：本地服务已断开"
-                except Exception as e:
-                    return f"错误：连接检查失败 - {str(e)}"
+                # NOTE: 暂时关闭本地服务检查，新版Share会大幅增加llamacpp的负载，导致永远无法通过检查
+                # # 定期检查连接状态
+                # try:
+                #     if not await self.api.check_local_health_status():
+                #         return "错误：本地服务已断开"
+                # except Exception as e:
+                #     return f"错误：连接检查失败 - {str(e)}"
 
             return "正常停止"
-
+            
         except Exception as e:
             print(f"[Share] 启动错误: {e}")
             return f"错误：{str(e)}"
@@ -588,43 +623,44 @@ class CFShareSection(QFrame):
         
         if self.api:
             async def stop_api():
-                api = self.api  # 保存当前API引用
+                api = self.api
+                self.api = None  # 立即清除引用
                 try:
-                    # 先将self.api设为None，避免其他地方继续使用
-                    self.api = None
-                    # 使用保存的引用执行停止操作
                     await api.stop()
-                    await api.take_node_offline()
+                    return None
                 except Exception as e:
                     print(f"[Share] 停止错误: {e}")
+                    return str(e)
             
+            # 创建新的worker来处理停止操作
             worker = AsyncWorker(stop_api())
             worker.signals.finished.connect(self._handle_stop_finished)
             worker.signals.error.connect(self._handle_stop_error)
             self.thread_pool.start(worker)
+        
+        # 停止定时器
+        self.stop_timers_signal.emit()
         
         # 更新UI状态
         self.status_label.setText("状态: 正在停止...")
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(False)
 
+    @Slot()
+    def _handle_stop_finished(self, error_msg=None):
+        """处理停止完成的回调"""
+        if error_msg:
+            self.show_message_signal.emit("错误", f"停止时发生错误: {error_msg}")
+        
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.status_label.setText("状态: 已停止")
+
     @Slot(Exception)
     def _handle_stop_error(self, error):
         """处理停止时的错误"""
         print(f"[Share] 停止过程中发生错误: {error}")
         self._handle_stop_finished()  # 仍然执行清理操作
-
-    def _handle_stop_finished(self):
-        """处理停止完成"""
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.status_label.setText("状态: 已停止")
-        self.metrics_timer.stop()
-        self.reregister_timer.stop()
-        
-        # 确保API被清理
-        self.api = None
-        self.state.api = None
 
     @Slot()
     def refresh_slots(self):
@@ -785,3 +821,9 @@ class CFShareSection(QFrame):
                 QTimer.singleShot(0, cleanup_api)
             except Exception as e:
                 logging.error(f"Error initiating cleanup: {str(e)}")
+
+    @Slot(Exception)
+    def on_error(self, error):
+        """处理通用错误"""
+        self.status_label.setText(f"状态: 错误 - {str(error)}")
+        MessageBox("错误", f"操作失败: {str(error)}", self).exec_()

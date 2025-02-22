@@ -8,21 +8,21 @@ from typing import Optional, Set, Dict, Any
 class SakuraWSClient:
     def __init__(self, local_url: str, worker_url: str, token: Optional[str] = None):
         print(f"[WS] 初始化WebSocket客户端: local_url={local_url}, worker_url={worker_url}, token={'有token' if token else '无token'}")
-        self.local_url = local_url.rstrip('/')
-        self.worker_url = worker_url.rstrip('/')
+        self.local_url = local_url
+        self.worker_url = worker_url
         self.token = token
-        self.tasks: Set[asyncio.Task] = set()
         self.is_closing = False
+        self.tasks = set()
+        self._ws = None
+        self._current_loop = None
 
     async def _do_request(self, req: Dict[str, Any], session: aiohttp.ClientSession) -> tuple[bytes, int]:
         """处理HTTP请求"""
         try:
-            print(f"Processing {req.get('type', 'UNKNOWN')} request to {req.get('path', 'UNKNOWN')}")
             if req.get("type") == "GET":
                 async with session.get(self.local_url + req["path"]) as response:
                     return await response.read(), response.status
             elif req.get("type") == "POST":
-                print(f"POST data: {req.get('data', '')}")
                 async with session.post(self.local_url + req["path"], data=req["data"]) as response:
                     return await response.read(), response.status
         except aiohttp.ClientError as e:
@@ -34,14 +34,14 @@ class SakuraWSClient:
 
     async def _handle_request(self, ws: aiohttp.ClientWebSocketResponse, req: Dict[str, Any], session: aiohttp.ClientSession):
         """处理WebSocket请求"""
+        if self.is_closing:
+            return
+            
         data = b''
         status = 500
 
         try:
             data, status = await self._do_request(req, session)
-            print(f"Response status: {status}")
-            if data:
-                print(f"Response data: {data.decode('utf-8', errors='replace')[:200]}...")
         except Exception as e:
             print(f"Request failed: {e}")
 
@@ -51,8 +51,25 @@ class SakuraWSClient:
             "data": data.decode('utf-8', errors='replace') if data else ""
         })
 
+    async def stop(self):
+        """停止WebSocket客户端"""
+        print("[WS] 开始停止WebSocket客户端")
+        self.is_closing = True
+        
+        # 取消所有待处理任务
+        if hasattr(self, 'tasks'):
+            for task in self.tasks:
+                task.cancel()
+        
+        if self._ws and not self._ws.closed:
+            await self._ws.close()
+        
+        print("[WS] WebSocket客户端停止完成")
+
     async def start(self):
         """启动WebSocket客户端"""
+        self._current_loop = asyncio.get_running_loop()
+        
         while not self.is_closing:
             try:
                 # 构建WebSocket URL
@@ -65,38 +82,29 @@ class SakuraWSClient:
                 
                 async with aiohttp.ClientSession() as session:
                     async with session.ws_connect(uri) as ws:
+                        self._ws = ws
                         print("[WS] 已成功连接到服务器")
-                        async for msg in ws:
-                            if msg.type == aiohttp.WSMsgType.TEXT:
-                                req = json.loads(msg.data)
-                                task = asyncio.create_task(self._handle_request(ws, req, session))
-                                self.tasks.add(task)
-                                task.add_done_callback(self.tasks.discard)
-                            elif msg.type == aiohttp.WSMsgType.CLOSED:
-                                print("[WS] WebSocket连接已关闭")
-                                break
-                            elif msg.type == aiohttp.WSMsgType.ERROR:
-                                print(f"[WS] WebSocket错误: {ws.exception()}")
-                                break
-
+                        try:
+                            async for msg in ws:
+                                if msg.type == aiohttp.WSMsgType.TEXT:
+                                    if not self.is_closing:
+                                        req = json.loads(msg.data)
+                                        task = asyncio.create_task(
+                                            self._handle_request(ws, req, session)
+                                        )
+                                        self.tasks.add(task)
+                                        task.add_done_callback(self.tasks.discard)
+                        except asyncio.CancelledError:
+                            print("[WS] 连接被主动取消")
+                            break
+                        
+            except asyncio.CancelledError:
+                print("[WS] 连接任务被取消")
+                break
             except Exception as e:
-                print(f"[WS] 连接错误: {e}, 5秒后重试...")
-                await asyncio.sleep(5)
-
-    async def stop(self):
-        """停止WebSocket客户端"""
-        print("[WS] 开始停止WebSocket客户端")
-        self.is_closing = True
-        
-        # 取消所有正在运行的任务
-        for task in self.tasks:
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        
-        self.tasks.clear()
-        print("[WS] WebSocket客户端已停止")
+                if not self.is_closing:
+                    print(f"[WS] 连接错误: {e}, 5秒后重试...")
+                    await asyncio.sleep(5)
+                else:
+                    break
                 

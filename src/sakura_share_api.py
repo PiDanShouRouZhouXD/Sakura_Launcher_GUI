@@ -28,6 +28,9 @@ class SakuraShareAPI:
         self.is_closing = False
         self.ws_client = None
         self._ws_task = None
+        self._last_successful_check_mode = None  # 记录上次成功的检查模式
+        self._health_check_failures = 0  # 记录连续失败次数
+        self._last_health_check_time = 0  # 记录上次检查时间
 
     async def start_cloudflare_tunnel(self, cloudflared_path: str):
         """
@@ -95,33 +98,65 @@ class SakuraShareAPI:
 
     async def check_local_health_status(self) -> bool:
         """
-        检查本地服务的健康状态。
-        
-        返回:
-            bool: 如果健康状态正常则返回True，否则返回False。
-            
-        说明:
-            支持两种格式：
-            1. LlamaCpp格式: {"status": "ok"/"no slot available"}
-            2. SGLang格式: 直接返回 200 状态码
+        检查本地服务的健康状态
         """
-        # 先尝试 SGLang 的 /health 接口
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"http://localhost:{self.port}/health", timeout=5) as response:
-                    if response.status == 200:
-                        return True
-        except Exception:
-            pass
-
-        # 如果不是 SGLang，尝试 LlamaCpp 的健康检查格式
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"http://localhost:{self.port}/health", timeout=5) as response:
-                    data = await response.json()
-                    return data["status"] in ["ok", "no slot available"]
-        except Exception:
-            return False
+        timeout = aiohttp.ClientTimeout(total=15)  # 增加超时时间到15秒
+        max_retries = 3
+        
+        # 根据之前成功的检查方式确定优先使用的格式
+        check_mode = getattr(self, '_last_successful_check_mode', None)
+        
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for attempt in range(max_retries):
+                try:
+                    # 优先使用上次成功的检查方式
+                    if check_mode == 'llamacpp' or check_mode is None:
+                        try:
+                            async with session.get(f"http://localhost:{self.port}/health") as response:
+                                if response.status == 200:
+                                    try:
+                                        data = await response.json()
+                                        if data.get("status") in ["ok", "no slot available"]:
+                                            self._last_successful_check_mode = 'llamacpp'
+                                            return True
+                                    except:
+                                        # 如果解析JSON失败，可能是SGLang格式
+                                        if response.status == 200:
+                                            self._last_successful_check_mode = 'sglang'
+                                            return True
+                        except Exception as e:
+                            if check_mode == 'llamacpp':
+                                print(f"[API] LlamaCpp健康检查失败: {e}")
+                    
+                    # 如果LlamaCpp格式失败或者上次是SGLang格式，尝试SGLang格式
+                    if check_mode == 'sglang' or check_mode is None:
+                        try:
+                            async with session.get(f"http://localhost:{self.port}/health") as response:
+                                if response.status == 200:
+                                    self._last_successful_check_mode = 'sglang'
+                                    return True
+                        except Exception as e:
+                            if check_mode == 'sglang':
+                                print(f"[API] SGLang健康检查失败: {e}")
+                    
+                    # 如果到这里还没有返回，说明当前尝试失败
+                    if attempt < max_retries - 1:
+                        # 根据重试次数动态调整等待时间
+                        wait_time = min(2 * (attempt + 1), 5)  # 最多等待5秒
+                        print(f"[API] 健康检查失败，等待{wait_time}秒后重试 ({attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                    
+                except asyncio.TimeoutError:
+                    print(f"[API] 健康检查超时 (尝试 {attempt + 1}/{max_retries})")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(min(2 * (attempt + 1), 5))
+                except Exception as e:
+                    print(f"[API] 健康检查发生未知错误: {e} (尝试 {attempt + 1}/{max_retries})")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(min(2 * (attempt + 1), 5))
+        
+        print("[API] 健康检查在最大重试次数后仍然失败")
+        return False
 
     async def register_node(self, tg_token: Optional[str] = None) -> bool:
         """
@@ -237,12 +272,14 @@ class SakuraShareAPI:
         """
         max_retries = 3
         last_error = None
+        timeout = aiohttp.ClientTimeout(total=10)  # 添加10秒超时
         
         for attempt in range(max_retries):
             try:
                 print(f"[API] 尝试获取排名数据 (尝试 {attempt + 1}/{max_retries})")
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(f"{self.worker_url}/rank") as response:
+                # 为ranking请求创建独立的session
+                async with aiohttp.ClientSession(timeout=timeout) as ranking_session:
+                    async with ranking_session.get(f"{self.worker_url}/rank") as response:
                         print(f"[API] 排名请求状态码: {response.status}")
                         data = await response.json()
                         print(f"[API] 获取到的排名数据: {data}")
@@ -251,6 +288,9 @@ class SakuraShareAPI:
                         else:
                             last_error = f"数据格式错误: {data}"
                             print(f"[API] {last_error}")
+            except asyncio.TimeoutError:
+                last_error = "请求超时"
+                print(f"[API] 获取排名超时 (尝试 {attempt + 1}/{max_retries})")
             except Exception as e:
                 last_error = str(e)
                 print(f"[API] 获取排名失败 (尝试 {attempt + 1}/{max_retries}): {last_error}")
@@ -268,16 +308,23 @@ class SakuraShareAPI:
             Dict[str, Any]: 包含指标信息的字典，如果获取失败则返回错误信息。
         """
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"http://localhost:{self.port}/metrics", timeout=5) as response:
+            print(f"[DEBUG] 正在获取指标，端口：{self.port}")
+            # 创建新的session专门用于metrics请求
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as metrics_session:
+                async with metrics_session.get(f"http://localhost:{self.port}/metrics") as response:
                     if response.status == 200:
                         metrics_text = await response.text()
+                        print(f"[DEBUG] 原始指标数据:\n{metrics_text}")
                         return self.parse_metrics(metrics_text)
                     else:
+                        print(f"[ERROR] 获取指标失败，状态码：{response.status}")
                         return {"error": f"HTTP status {response.status}"}
         except aiohttp.ClientError as e:
+            print(f"[ERROR] 请求错误：{str(e)}")
             return {"error": f"Request error: {str(e)}"}
         except Exception as e:
+            print(f"[ERROR] 未知错误：{str(e)}")
             return {"error": f"Unexpected error: {str(e)}"}
 
     @staticmethod
@@ -394,37 +441,32 @@ class SakuraShareAPI:
     async def stop(self):
         """停止服务并清理资源"""
         print("[API] 开始停止API服务")
+        self.is_running = False
         self.is_closing = True
         
         # 停止WebSocket客户端
         if self.ws_client:
             print("[API] 停止WebSocket客户端")
-            await self.ws_client.stop()
-            self.ws_client = None
-            print("[API] WebSocket客户端已停止")
-            
-        if self._ws_task:
-            print("[API] 取消WebSocket任务")
-            self._ws_task.cancel()
             try:
-                await self._ws_task
-            except asyncio.CancelledError:
-                pass
-            self._ws_task = None
-            print("[API] WebSocket任务已取消")
-            
+                await self.ws_client.stop()
+                print("[API] WebSocket客户端已停止")
+            except Exception as e:
+                print(f"[API] 停止WebSocket客户端时出错: {e}")
+            self.ws_client = None
+        
         # 停止Cloudflared（仅tunnel模式）
         if self.mode == 'tunnel' and self.cloudflared_process:
             print("[API] 停止Cloudflared进程")
             try:
                 self.cloudflared_process.terminate()
+                await asyncio.wait_for(self.cloudflared_process.wait(), timeout=5.0)
                 print("[API] Cloudflared进程已终止")
             except Exception as e:
                 print(f"[API] Cloudflared进程终止失败，尝试强制终止: {e}")
                 self.cloudflared_process.kill()
+                await self.cloudflared_process.wait()
                 print("[API] Cloudflared进程已强制终止")
-                
-        self.cloudflared_process = None
-        self.is_running = False
-        self.tunnel_url = None
+            self.cloudflared_process = None
+            self.tunnel_url = None
+        
         print("[API] API服务停止完成")

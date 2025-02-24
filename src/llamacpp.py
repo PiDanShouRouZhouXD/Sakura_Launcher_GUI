@@ -8,6 +8,9 @@ import zipfile
 
 from PySide6.QtCore import QObject, Signal
 
+from common import GHPROXY_URL
+
+
 
 class Llamacpp:
     repo: str
@@ -32,7 +35,7 @@ class Llamacpp:
         self.require_cuda = require_cuda
         github_repo = f"https://github.com/{repo}/{filename}"
         self.download_links = {
-            "GHProxy": "https://ghp.ci/" + github_repo,
+            "GHProxy": f"https://{GHPROXY_URL}/" + github_repo,
             "GitHub": github_repo,
         }
 
@@ -46,7 +49,7 @@ class LlamacppList(QObject):
         "filename": "cudart-llama-bin-win-cu12.2.0-x64.zip",
         "download_links": {
             "GitHub": "https://github.com/ggerganov/llama.cpp/releases/download/b3926/cudart-llama-bin-win-cu12.2.0-x64.zip",
-            "GHProxy": "https://ghp.ci/https://github.com/ggerganov/llama.cpp/releases/download/b3926/cudart-llama-bin-win-cu12.2.0-x64.zip",
+            "GHProxy": f"https://{GHPROXY_URL}/https://github.com/ggerganov/llama.cpp/releases/download/b3926/cudart-llama-bin-win-cu12.2.0-x64.zip",
         },
     }
     _list: List[Llamacpp] = []

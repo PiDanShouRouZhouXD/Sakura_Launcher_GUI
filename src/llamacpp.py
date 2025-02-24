@@ -8,7 +8,7 @@ import zipfile
 
 from PySide6.QtCore import QObject, Signal
 
-from common import GHPROXY_URL
+from .common import GHPROXY_URL
 
 
 

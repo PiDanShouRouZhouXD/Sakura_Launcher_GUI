@@ -470,3 +470,61 @@ class SakuraShareAPI:
             self.tunnel_url = None
         
         print("[API] API服务停止完成")
+
+    async def get_nodes(self, token: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        获取节点列表信息。
+        
+        参数:
+            token (Optional[str]): 可选的认证token。
+            
+        返回:
+            List[Dict[str, Any]]: 包含节点信息的列表，如果获取失败则返回包含错误信息的字典。
+        """
+        max_retries = 3
+        last_error = None
+        timeout = aiohttp.ClientTimeout(total=10)  # 添加10秒超时
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"[API] 尝试获取节点列表 (尝试 {attempt + 1}/{max_retries})")
+                url = f"{self.worker_url}/nodes"
+                if token:
+                    url += f"?token={token}"
+                    
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url) as response:
+                        print(f"[API] 节点列表请求状态码: {response.status}")
+                        if response.status != 200:
+                            last_error = f"HTTP {response.status}"
+                            print(f"[API] 请求失败: {last_error}")
+                            continue
+                            
+                        try:
+                            data = await response.json()
+                            print(f"[API] 获取到的节点列表数据: {data}")
+                            if isinstance(data, list):
+                                return data
+                            else:
+                                last_error = f"数据格式错误: {data}"
+                                print(f"[API] {last_error}")
+                        except aiohttp.ContentTypeError:
+                            # 处理非JSON响应
+                            text = await response.text()
+                            last_error = f"响应不是JSON格式: {text[:200]}"  # 只显示前200个字符
+                            print(f"[API] {last_error}")
+                        except Exception as e:
+                            last_error = f"解析响应失败: {str(e)}"
+                            print(f"[API] {last_error}")
+                            
+            except asyncio.TimeoutError:
+                last_error = "请求超时"
+                print(f"[API] 获取节点列表超时 (尝试 {attempt + 1}/{max_retries})")
+            except Exception as e:
+                last_error = str(e)
+                print(f"[API] 获取节点列表失败 (尝试 {attempt + 1}/{max_retries}): {last_error}")
+                
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2)  # 在重试之间等待2秒
+                
+        return [{"error": f"获取节点列表失败 - {last_error}"}]

@@ -582,10 +582,10 @@ class CFShareSection(QFrame):
             self.start_timers_signal.emit()
             
             # 保持连接活跃
-            while not self._should_stop:
-                await asyncio.sleep(60)
-                if not self.api or not self.api.is_running:
-                    return "错误：连接已断开"
+            # while not self._should_stop:
+            #     await asyncio.sleep(60)
+            #     if not self.api or not self.api.is_running:
+            #         return "错误：连接已断开"
                 # NOTE: 暂时关闭本地服务检查，新版Share会大幅增加llamacpp的负载，导致永远无法通过检查
                 # # 定期检查连接状态
                 # try:

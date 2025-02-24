@@ -15,7 +15,7 @@ async def main():
     parser.add_argument("--port", type=int, required=True, help="Local server port")
     parser.add_argument("--worker-url", type=str, default="https://sakura-share.one", required=False, help="Worker URL, default is https://sakura-share.one")
     parser.add_argument("--tg-token", type=str, help="Telegram token (optional)")
-    parser.add_argument("--action", choices=["start", "stop", "status", "metrics", "ranking"], required=True, help="Action to perform")
+    parser.add_argument("--action", choices=["start", "stop", "status", "metrics", "ranking", "nodes"], required=True, help="Action to perform")
     parser.add_argument("--mode", choices=["ws", "tunnel"], default="tunnel", help="Operation mode: ws (WebSocket) or tunnel (default)")
     parser.add_argument("--cloudflared-path", type=str, help="Path to cloudflared executable (required for tunnel mode if custom-tunnel-url not provided)")
     parser.add_argument("--custom-tunnel-url", type=str, help="Custom tunnel URL (optional for tunnel mode)")
@@ -38,6 +38,8 @@ async def main():
         await get_metrics(api)
     elif args.action == "ranking":
         await get_ranking(api)
+    elif args.action == "nodes":
+        await get_nodes(api, args.tg_token)
 
 async def start_sharing(api: SakuraShareAPI, tg_token: str, cloudflared_path: Optional[str] = None, custom_tunnel_url: Optional[str] = None):
     stop_event = asyncio.Event()
@@ -104,6 +106,16 @@ async def get_ranking(api: SakuraShareAPI):
     else:
         for username, count in sorted(ranking.items(), key=lambda item: int(item[1]), reverse=True):
             print(f"{username}: {count}")
+
+async def get_nodes(api: SakuraShareAPI, token: Optional[str] = None):
+    """获取并显示节点列表"""
+    nodes = await api.get_nodes(token)
+    if isinstance(nodes, list) and len(nodes) > 0 and "error" in nodes[0]:
+        print(f"获取节点列表失败: {nodes[0]['error']}")
+    else:
+        print("节点列表:")
+        for node in nodes:
+            print(f"节点信息: {node}")
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

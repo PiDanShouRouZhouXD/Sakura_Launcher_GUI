@@ -6,7 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('icon.ico', '.'), ('data.json', '.')],
-    hiddenimports=['tiktoken_ext.openai_public', 'tiktoken_ext', 'PySide6', 'PySide6.QtCore', 'PySide6.QtGui', 'qfluentwidgets', 'PySide6.QtWebEngineWidgets', 'PySide6.QtWebEngineCore'],
+    hiddenimports=['tiktoken_ext.openai_public', 'tiktoken_ext', 'PySide6', 'PySide6.QtCore', 'PySide6.QtGui', 'qfluentwidgets'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -19,6 +19,8 @@ if sys.platform == 'win32':
     exclude_prefix = [
         'PySide6\\opengl32sw.dll',
         'PySide6\\Qt6Pdf.dll',
+        'PySide6\\Qt6Network.dll',
+        'PySide6\\QtNetwork.pyd',
         'PySide6\\Qt6VirtualKeyboard.dll',
         'PySide6\\Qt6Qml.dll',
         'PySide6\\Qt6Quick.dll',
@@ -30,6 +32,8 @@ if sys.platform == 'win32':
 else:
     exclude_prefix = [
         'PySide6/Qt6Pdf',
+        'PySide6/Qt6Network',
+        'PySide6/QtNetwork',
         'PySide6/Qt6VirtualKeyboard',
         'PySide6/Qt6Qml',
         'PySide6/Qt6Quick',

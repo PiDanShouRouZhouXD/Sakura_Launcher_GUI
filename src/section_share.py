@@ -11,7 +11,6 @@ from PySide6.QtCore import (
     QTimer,
     QObject,
     QMetaObject,
-    QUrl,
 )
 from PySide6.QtWidgets import (
     QVBoxLayout,
@@ -24,7 +23,6 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QWidget,
 )
-from PySide6.QtWebEngineWidgets import QWebEngineView
 from qfluentwidgets import (
     PushButton,
     PrimaryPushButton,
@@ -142,12 +140,10 @@ class CFShareSection(QFrame):
         self.share_page = QWidget()
         self.metrics_page = QWidget()
         self.ranking_page = QWidget()
-        self.dashboard_page = QWidget()  # 添加新的公示板页面
 
         self.init_share_page()
         self.init_metrics_page()
         self.init_ranking_page()
-        self.init_dashboard_page()  # 初始化公示板页面
 
         def add_sub_interface(widget: QWidget, object_name, text):
             widget.setObjectName(object_name)
@@ -161,7 +157,6 @@ class CFShareSection(QFrame):
         add_sub_interface(self.share_page, "share_page", "共享设置")
         add_sub_interface(self.metrics_page, "metrics_page", "本地数据统计")
         add_sub_interface(self.ranking_page, "ranking_page", "在线排名")
-        add_sub_interface(self.dashboard_page, "dashboard_page", "在线公示板")  # 添加公示板标签
 
         pivot.setCurrentItem(stacked_widget.currentWidget().objectName())
 
@@ -1007,11 +1002,6 @@ class CFShareSection(QFrame):
             self.metrics_timer.stop()
             self.metrics_timer.deleteLater()
 
-        # 清理WebView资源
-        if hasattr(self, "web_view"):
-            self.web_view.stop()
-            self.web_view.deleteLater()
-
         # API清理
         if self.api:
             try:
@@ -1059,38 +1049,3 @@ class CFShareSection(QFrame):
                 if self.metrics_stacked_widget.widget(i).objectName() == target_page:
                     self.metrics_stacked_widget.setCurrentIndex(i)
                     break
-
-    def init_dashboard_page(self):
-        """初始化在线公示板页面"""
-        layout = QVBoxLayout(self.dashboard_page)
-        layout.setContentsMargins(0, 0, 0, 0)  # 设置内部边距
-
-        # 添加说明标签
-        info_label = QLabel("算力公示板 - 实时显示全网算力情况")
-        info_label.setAlignment(Qt.AlignCenter)
-        info_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                font-weight: bold;
-                margin: 5px;
-            }
-        """)
-        layout.addWidget(info_label)
-
-        # 创建WebView组件
-        self.web_view = QWebEngineView()
-        self.web_view.setUrl(QUrl("https://sakura-share.one/"))
-        
-        # 设置加载状态提示
-        self.web_view.loadStarted.connect(lambda: info_label.setText("算力公示板 - 正在加载..."))
-        self.web_view.loadFinished.connect(lambda: info_label.setText("算力公示板 - 实时显示全网算力情况"))
-        
-        # 添加刷新按钮
-        refresh_button = PushButton(FIF.SYNC, "刷新页面")
-        refresh_button.clicked.connect(self.web_view.reload)
-        
-        layout.addWidget(self.web_view)
-        layout.addWidget(refresh_button)
-        
-        # 设置WebView占据大部分空间
-        layout.setStretch(1, 10)  # WebView的索引是1，给它10的拉伸因子

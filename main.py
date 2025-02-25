@@ -81,10 +81,6 @@ class MainWindow(MSFluentWindow):
             self.run_llamacpp_batch_bench
         )
 
-        self.cf_share_section.request_download_cloudflared.connect(
-            self.dowload_section.start_download_cloudflared
-        )
-
         self.settings_section.sig_need_update.connect(
             self.dowload_section.start_download_launcher
         )

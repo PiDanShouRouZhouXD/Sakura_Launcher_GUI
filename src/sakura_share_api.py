@@ -1,29 +1,24 @@
 import logging
-import re
 import asyncio
 import aiohttp
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, TypeVar, Callable, Coroutine
 from .sakura_ws_client import SakuraWSClient
+
+T = TypeVar('T')  # 定义泛型类型变量
 
 class SakuraShareAPI:
     """
-    SakuraShareAPI类用于管理和操作Cloudflare隧道、节点注册、健康状态检查等功能。
+    SakuraShareAPI类用于管理WebSocket连接、健康状态检查等功能。
     
     参数:
         port (int): 本地服务运行的端口号。
         worker_url (str): Worker服务的URL地址。
-        mode (str): 运行模式，可选 'ws' 或 'tunnel'
     """
 
-    def __init__(self, port: int, worker_url: str, mode: str = 'ws'):
-        print(f"[API] 初始化API: port={port}, worker_url={worker_url}, mode={mode}")
-        if mode not in ['ws', 'tunnel']:
-            raise ValueError("mode必须是'ws'或'tunnel'之一")
+    def __init__(self, port: int, worker_url: str):
+        print(f"[API] 初始化API: port={port}, worker_url={worker_url}")
         self.port = port
         self.worker_url = worker_url.rstrip('/')
-        self.mode = mode
-        self.cloudflared_process = None
-        self.tunnel_url = None
         self.is_running = False
         self.is_closing = False
         self.ws_client = None
@@ -32,69 +27,56 @@ class SakuraShareAPI:
         self._health_check_failures = 0  # 记录连续失败次数
         self._last_health_check_time = 0  # 记录上次检查时间
 
-    async def start_cloudflare_tunnel(self, cloudflared_path: str):
+    async def _retry_request(
+        self, 
+        request_func: Callable[[], Coroutine[Any, Any, T]], 
+        max_retries: int = 3, 
+        timeout_seconds: int = 10,
+        error_msg: str = "请求失败",
+        success_condition: Callable[[T], bool] = None
+    ) -> T:
         """
-        启动Cloudflare隧道并获取隧道URL。
+        通用的重试请求方法
         
         参数:
-            cloudflared_path (str): cloudflared可执行文件的路径。
-        
+            request_func: 实际执行请求的异步函数
+            max_retries: 最大重试次数
+            timeout_seconds: 请求超时时间(秒)
+            error_msg: 错误信息前缀
+            success_condition: 判断响应是否成功的函数，默认为None表示无需额外判断
+            
         返回:
-            str: Cloudflare隧道的URL。
-        
-        异常:
-            Exception: 如果启动隧道或获取隧道URL失败。
+            T: 请求结果，如果所有尝试都失败则返回错误信息
         """
-        self.is_running = True
-
-        try:
-            self.cloudflared_process = await asyncio.create_subprocess_exec(
-                cloudflared_path,
-                "tunnel",
-                "--url",
-                f"http://localhost:{self.port}",
-                "--metrics",
-                "localhost:8081",
-            )
-        except Exception as e:
-            raise Exception(f"启动 Cloudflare 隧道失败: {str(e)}")
-
-        self.tunnel_url = await self.wait_for_tunnel_url()
-        return self.tunnel_url
-
-    async def wait_for_tunnel_url(self):
-        """
-        等待并获取Cloudflare隧道的URL。
+        last_error = None
+        timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         
-        尝试最多30次，每次间隔1秒。
-        
-        返回:
-            str: 获取到的Cloudflare隧道URL。
-        
-        异常:
-            Exception: 如果在最大尝试次数内未能获取隧道URL。
-        """
-        max_attempts = 30  # 最多尝试30次
-        for attempt in range(max_attempts):
+        for attempt in range(max_retries):
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get("http://localhost:8081/metrics", timeout=5) as response:
-                        metrics_text = await response.text()
-                        tunnel_url_match = re.search(r"(https://.*?\.trycloudflare\.com)", metrics_text)
-                        if tunnel_url_match:
-                            return tunnel_url_match.group(1)
-            except Exception:
-                pass
-            await asyncio.sleep(1)  # 每次尝试后等待1秒
-
-        print("获取隧道URL失败")
-        return None
-
-    async def get_tunnel_url(self):
-        if self.tunnel_url:
-            return self.tunnel_url
-        else:
-            return await self.wait_for_tunnel_url()
+                print(f"[API] {error_msg} (尝试 {attempt + 1}/{max_retries})")
+                result = await request_func()
+                
+                # 如果提供了成功条件函数，则使用它来判断是否成功
+                if success_condition and not success_condition(result):
+                    last_error = f"响应不满足成功条件: {result}"
+                    print(f"[API] {last_error}")
+                else:
+                    return result
+                    
+            except asyncio.TimeoutError:
+                last_error = "请求超时"
+                print(f"[API] {error_msg}超时 (尝试 {attempt + 1}/{max_retries})")
+            except Exception as e:
+                last_error = str(e)
+                print(f"[API] {error_msg} (尝试 {attempt + 1}/{max_retries}): {last_error}")
+                
+            if attempt < max_retries - 1:
+                # 根据重试次数动态调整等待时间
+                wait_time = min(2 * (attempt + 1), 5)  # 最多等待5秒
+                print(f"[API] 等待{wait_time}秒后重试")
+                await asyncio.sleep(wait_time)
+                
+        return {"error": f"{error_msg} - {last_error}"}
 
     async def check_local_health_status(self) -> bool:
         """
@@ -158,83 +140,6 @@ class SakuraShareAPI:
         print("[API] 健康检查在最大重试次数后仍然失败")
         return False
 
-    async def register_node(self, tg_token: Optional[str] = None) -> bool:
-        """
-        注册节点到Worker服务。
-        
-        参数:
-            tg_token (Optional[str]): Telegram Token，可选参数。
-        
-        返回:
-            bool: 如果注册成功则返回True，否则返回False。
-        """
-        if self.mode == 'ws':
-            # WebSocket模式下不需要注册节点
-            return True
-
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                json_data = {
-                    "url": self.tunnel_url,
-                    "token": tg_token,
-                }
-                json_data = {k: v for k, v in json_data.items() if v is not None}
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{self.worker_url}/register-node",
-                        json=json_data,
-                        headers={"Content-Type": "application/json"},
-                    ) as response:
-                        logging.info(f"节点注册请求: {f'{self.worker_url}/register-node'}")
-                        logging.info(f"节点注册响应: {await response.text()}")
-                        if response.status == 200:
-                            return True
-            except Exception as e:
-                logging.info(f"节点注册失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-            
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2)  # 在重试之间等待2秒
-
-        return False
-
-    async def take_node_offline(self) -> bool:
-        """
-        将节点下线，停止其服务。
-        
-        返回:
-            bool: 如果成功下线则返回True，否则返回False。
-        """
-        if self.mode == 'ws':
-            # WebSocket模式下不需要下线操作
-            return True
-            
-        print("[API] 开始执行节点下线")
-        if self.is_closing:
-            print("[API] 节点已经在关闭中，跳过下线操作")
-            return False
-        try:
-            print(f"[API] 准备发送下线请求到: {self.worker_url}/delete-node")
-            timeout = aiohttp.ClientTimeout(total=10)  # 设置10秒超时
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                try:
-                    print(f"[API] 发送POST请求，tunnel_url={self.tunnel_url}")
-                    async with session.post(
-                        f"{self.worker_url}/delete-node",
-                        json={"url": self.tunnel_url},
-                        headers={"Content-Type": "application/json"},
-                    ) as response:
-                        response_text = await response.text()
-                        print(f"[API] 节点下线响应: status={response.status}, response={response_text}")
-                        return response.status == 200
-                except aiohttp.ClientError as e:
-                    print(f"[API] 节点下线请求失败：{str(e)}")
-                    return False
-        except Exception as e:
-            print(f"[API] 节点下线过程发生错误：{str(e)}")
-            return False
-
     async def get_slots_status(self) -> str:
         """
         获取当前在线slot的状态，包括空闲和处理中数量。
@@ -242,18 +147,31 @@ class SakuraShareAPI:
         返回:
             str: 描述在线slot数量的字符串。
         """
-        try:
+        async def _request_slots():
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{self.worker_url}/health") as response:
-                    data = await response.json()
-                    if data["status"] == "ok":
-                        slots_idle = data.get("slots_idle", "未知")
-                        slots_processing = data.get("slots_processing", "未知")
-                        return f"在线slot数量: 空闲 {slots_idle}, 处理中 {slots_processing}"
-                    else:
-                        return "在线slot数量: 获取失败"
-        except Exception as e:
-            return f"在线slot数量: 获取失败 - {str(e)}"
+                    return await response.json()
+        
+        def _check_success(data):
+            return isinstance(data, dict) and data.get("status") == "ok"
+        
+        result = await self._retry_request(
+            request_func=_request_slots,
+            max_retries=3,
+            timeout_seconds=10,
+            error_msg="获取slot状态",
+            success_condition=_check_success
+        )
+        
+        if isinstance(result, dict) and not result.get("error"):
+            if result.get("status") == "ok":
+                slots_idle = result.get("slots_idle", "未知")
+                slots_processing = result.get("slots_processing", "未知")
+                return f"在线slot数量: 空闲 {slots_idle}, 处理中 {slots_processing}"
+        
+        # 如果请求失败或结果不符合预期
+        error_msg = result.get("error", "未知错误") if isinstance(result, dict) else str(result)
+        return f"在线slot数量: 获取失败 - {error_msg}"
 
     async def get_ranking(self) -> List[Dict[str, Any]]:
         """
@@ -270,62 +188,31 @@ class SakuraShareAPI:
                 }
             ]
         """
-        max_retries = 3
-        last_error = None
-        timeout = aiohttp.ClientTimeout(total=10)  # 添加10秒超时
+        async def _request_ranking():
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.worker_url}/rank") as response:
+                    print(f"[API] 排名请求状态码: {response.status}")
+                    data = await response.json()
+                    print(f"[API] 获取到的排名数据: {data}")
+                    return data
         
-        for attempt in range(max_retries):
-            try:
-                print(f"[API] 尝试获取排名数据 (尝试 {attempt + 1}/{max_retries})")
-                # 为ranking请求创建独立的session
-                async with aiohttp.ClientSession(timeout=timeout) as ranking_session:
-                    async with ranking_session.get(f"{self.worker_url}/rank") as response:
-                        print(f"[API] 排名请求状态码: {response.status}")
-                        data = await response.json()
-                        print(f"[API] 获取到的排名数据: {data}")
-                        if isinstance(data, list):
-                            return data
-                        else:
-                            last_error = f"数据格式错误: {data}"
-                            print(f"[API] {last_error}")
-            except asyncio.TimeoutError:
-                last_error = "请求超时"
-                print(f"[API] 获取排名超时 (尝试 {attempt + 1}/{max_retries})")
-            except Exception as e:
-                last_error = str(e)
-                print(f"[API] 获取排名失败 (尝试 {attempt + 1}/{max_retries}): {last_error}")
-                
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2)  # 在重试之间等待2秒
-                
-        return [{"error": f"获取失败 - {last_error}"}]
-
-    async def get_metrics(self) -> Dict[str, Any]:
-        """
-        获取本地服务的指标信息。
+        def _check_success(data):
+            return isinstance(data, list)
         
-        返回:
-            Dict[str, Any]: 包含指标信息的字典，如果获取失败则返回错误信息。
-        """
-        try:
-            print(f"[DEBUG] 正在获取指标，端口：{self.port}")
-            # 创建新的session专门用于metrics请求
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as metrics_session:
-                async with metrics_session.get(f"http://localhost:{self.port}/metrics") as response:
-                    if response.status == 200:
-                        metrics_text = await response.text()
-                        print(f"[DEBUG] 原始指标数据:\n{metrics_text}")
-                        return self.parse_metrics(metrics_text)
-                    else:
-                        print(f"[ERROR] 获取指标失败，状态码：{response.status}")
-                        return {"error": f"HTTP status {response.status}"}
-        except aiohttp.ClientError as e:
-            print(f"[ERROR] 请求错误：{str(e)}")
-            return {"error": f"Request error: {str(e)}"}
-        except Exception as e:
-            print(f"[ERROR] 未知错误：{str(e)}")
-            return {"error": f"Unexpected error: {str(e)}"}
+        result = await self._retry_request(
+            request_func=_request_ranking,
+            max_retries=3,
+            timeout_seconds=10,
+            error_msg="获取排名数据",
+            success_condition=_check_success
+        )
+        
+        if isinstance(result, list):
+            return result
+        
+        # 如果请求失败或结果不符合预期
+        error_msg = result.get("error", "未知错误") if isinstance(result, dict) else str(result)
+        return [{"error": f"获取失败 - {error_msg}"}]
 
     @staticmethod
     def parse_metrics(metrics_text: str) -> Dict[str, float]:
@@ -339,50 +226,96 @@ class SakuraShareAPI:
             Dict[str, float]: 解析后的指标字典。
         """
         metrics = {}
+        is_sglang = False
+        model_name = ""
+        
+        # 检查是否为SGLang格式
+        if "sglang:" in metrics_text:
+            is_sglang = True
+            logging.debug(f"[DEBUG] 检测到SGLang格式指标")
+            print(f"[DEBUG] 检测到SGLang格式指标")
+            
         for line in metrics_text.split("\n"):
             if line.startswith("#") or not line.strip():
                 continue
+                
             try:
-                key, value = line.split(" ")
-                metrics[key.split(":")[-1]] = float(value)
-            except ValueError:
+                if is_sglang:
+                    # 解析SGLang格式的指标
+                    if "{" in line and "}" in line:
+                        # 提取模型名称
+                        if "model_name=" in line:
+                            model_parts = line.split("model_name=")[1].split('"')
+                            if len(model_parts) > 1:
+                                model_name = model_parts[1]
+                                logging.debug(f"[DEBUG] 提取到SGLang模型名称: {model_name}")
+                                print(f"[DEBUG] 提取到SGLang模型名称: {model_name}")
+                                
+                        # 提取指标名称和值
+                        parts = line.split(" ")
+                        if len(parts) >= 2:
+                            # 保留完整的键名，包括sglang:前缀
+                            key = parts[0]
+                            if "_bucket" in key:
+                                # 跳过bucket指标，太多了
+                                continue
+                            value = float(parts[-1])
+                            metrics[key] = value
+                            logging.debug(f"[DEBUG] 解析SGLang指标: {key} = {value}")
+                            if "token_usage" in key or "cache_hit_rate" in key or "spec_accept_length" in key:
+                                print(f"[DEBUG] 解析关键SGLang指标: {key} = {value}")
+                else:
+                    # 原始LlamaCpp格式
+                    key, value = line.split(" ")
+                    metrics[key.split(":")[-1]] = float(value)
+            except (ValueError, IndexError) as e:
+                logging.debug(f"[DEBUG] 解析指标行失败: {line}, 错误: {str(e)}")
+                print(f"[DEBUG] 解析指标行失败: {line}, 错误: {str(e)}")
                 continue
+                
+        # 添加指标类型标记和模型名称
+        if is_sglang:
+            metrics["_is_sglang"] = 1.0
+            metrics["_model_name"] = model_name
+            logging.debug(f"[DEBUG] SGLang指标解析完成，共{len(metrics)}个指标")
+            logging.debug(f"[DEBUG] SGLang指标键值: {list(metrics.keys())}")
+            print(f"[DEBUG] SGLang指标解析完成，共{len(metrics)}个指标")
+            print(f"[DEBUG] SGLang指标键值: {list(metrics.keys())[:10]}...")
+        else:
+            metrics["_is_sglang"] = 0.0
+            
         return metrics
 
-    async def start_custom_tunnel(self, tunnel_url: str):
+    async def get_metrics(self) -> Dict[str, Any]:
         """
-        启动自定义隧道并设置隧道URL。
-        
-        参数:
-            tunnel_url (str): 自定义隧道的URL。
+        获取本地服务的指标信息。
         
         返回:
-            str: 设置的隧道URL。
+            Dict[str, Any]: 包含指标信息的字典，如果获取失败则返回错误信息。
         """
-        self.is_running = True
-        self.tunnel_url = tunnel_url
-        return self.tunnel_url
-
-    async def start_tunnel(self, cloudflared_path: Optional[str] = None, custom_tunnel_url: Optional[str] = None):
-        """
-        启动隧道，支持cloudflared或自定义隧道。
+        async def _request_metrics():
+            print(f"[DEBUG] 正在获取指标，端口：{self.port}")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"http://localhost:{self.port}/metrics") as response:
+                    if response.status != 200:
+                        raise Exception(f"HTTP状态码错误: {response.status}")
+                    metrics_text = await response.text()
+                    print(f"[DEBUG] 原始指标数据:\n{metrics_text[:500]}...")  # 只打印前500个字符
+                    return metrics_text
         
-        参数:
-            cloudflared_path (Optional[str]): cloudflared可执行文件的路径，用于cloudflared隧道。
-            custom_tunnel_url (Optional[str]): 自定义隧道的URL。
+        result = await self._retry_request(
+            request_func=_request_metrics,
+            max_retries=3,
+            timeout_seconds=10,
+            error_msg="获取指标数据"
+        )
         
-        返回:
-            str: 启动的隧道URL。
+        if isinstance(result, str):
+            return self.parse_metrics(result)
         
-        异常:
-            Exception: 如果两种隧道方式都未提供或启动失败。
-        """
-        if custom_tunnel_url:
-            return await self.start_custom_tunnel(custom_tunnel_url)
-        elif cloudflared_path:
-            return await self.start_cloudflare_tunnel(cloudflared_path)
-        else:
-            raise Exception("必须提供cloudflared路径或自定义隧道URL")
+        # 如果请求失败
+        error_msg = result.get("error", "未知错误") if isinstance(result, dict) else str(result)
+        return {"error": error_msg}
 
     async def start_ws_client(self, token: Optional[str] = None):
         """启动WebSocket客户端"""
@@ -403,33 +336,18 @@ class SakuraShareAPI:
         print("[API] WebSocket客户端启动完成")
         return "ws_connected"
 
-    async def start(self, cloudflared_path: Optional[str] = None, custom_tunnel_url: Optional[str] = None, tg_token: Optional[str] = None) -> bool:
+    async def start(self, tg_token: Optional[str] = None) -> bool:
         """
-        根据模式启动服务。
+        启动WebSocket服务。
         
         参数:
-            cloudflared_path (Optional[str]): cloudflared可执行文件的路径，tunnel模式下可选。
-            custom_tunnel_url (Optional[str]): 自定义隧道的URL，tunnel模式下可选。
             tg_token (Optional[str]): Telegram Token，可选参数。
             
         返回:
             bool: 如果启动成功则返回True，否则返回False。
         """
         try:
-            if self.mode == 'tunnel':
-                # 启动隧道
-                if custom_tunnel_url:
-                    self.tunnel_url = await self.start_custom_tunnel(custom_tunnel_url)
-                elif cloudflared_path:
-                    self.tunnel_url = await self.start_cloudflare_tunnel(cloudflared_path)
-                else:
-                    raise Exception("tunnel模式下必须提供cloudflared路径或自定义隧道URL")
-                
-                # 注册节点
-                if not await self.register_node(tg_token):
-                    return False
-                    
-            # 启动WebSocket客户端（两种模式都需要）
+            # 启动WebSocket客户端
             await self.start_ws_client(tg_token)
             self.is_running = True
             return True
@@ -454,24 +372,9 @@ class SakuraShareAPI:
                 print(f"[API] 停止WebSocket客户端时出错: {e}")
             self.ws_client = None
         
-        # 停止Cloudflared（仅tunnel模式）
-        if self.mode == 'tunnel' and self.cloudflared_process:
-            print("[API] 停止Cloudflared进程")
-            try:
-                self.cloudflared_process.terminate()
-                await asyncio.wait_for(self.cloudflared_process.wait(), timeout=5.0)
-                print("[API] Cloudflared进程已终止")
-            except Exception as e:
-                print(f"[API] Cloudflared进程终止失败，尝试强制终止: {e}")
-                self.cloudflared_process.kill()
-                await self.cloudflared_process.wait()
-                print("[API] Cloudflared进程已强制终止")
-            self.cloudflared_process = None
-            self.tunnel_url = None
-        
         print("[API] API服务停止完成")
 
-    async def get_nodes(self, token: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_nodes(self, token: Optional[str] = None) -> List[str]:
         """
         获取节点列表信息。
         
@@ -479,52 +382,44 @@ class SakuraShareAPI:
             token (Optional[str]): 可选的认证token。
             
         返回:
-            List[Dict[str, Any]]: 包含节点信息的列表，如果获取失败则返回包含错误信息的字典。
+            List[str]: 包含节点ID的列表，如果获取失败则返回包含错误信息的字典。
+            返回格式示例：["id1", "id2", "id3"]
         """
-        max_retries = 3
-        last_error = None
-        timeout = aiohttp.ClientTimeout(total=10)  # 添加10秒超时
-        
-        for attempt in range(max_retries):
-            try:
-                print(f"[API] 尝试获取节点列表 (尝试 {attempt + 1}/{max_retries})")
-                url = f"{self.worker_url}/nodes"
-                if token:
-                    url += f"?token={token}"
+        async def _request_nodes():
+            url = f"{self.worker_url}/nodes"
+            if token:
+                url += f"?token={token}"
+                
+            print(f"[API] 请求URL: {url}")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    print(f"[API] 节点列表请求状态码: {response.status}")
+                    if response.status != 200:
+                        raise Exception(f"HTTP状态码错误: {response.status}")
                     
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url) as response:
-                        print(f"[API] 节点列表请求状态码: {response.status}")
-                        if response.status != 200:
-                            last_error = f"HTTP {response.status}"
-                            print(f"[API] 请求失败: {last_error}")
-                            continue
-                            
-                        try:
-                            data = await response.json()
-                            print(f"[API] 获取到的节点列表数据: {data}")
-                            if isinstance(data, list):
-                                return data
-                            else:
-                                last_error = f"数据格式错误: {data}"
-                                print(f"[API] {last_error}")
-                        except aiohttp.ContentTypeError:
-                            # 处理非JSON响应
-                            text = await response.text()
-                            last_error = f"响应不是JSON格式: {text[:200]}"  # 只显示前200个字符
-                            print(f"[API] {last_error}")
-                        except Exception as e:
-                            last_error = f"解析响应失败: {str(e)}"
-                            print(f"[API] {last_error}")
-                            
-            except asyncio.TimeoutError:
-                last_error = "请求超时"
-                print(f"[API] 获取节点列表超时 (尝试 {attempt + 1}/{max_retries})")
-            except Exception as e:
-                last_error = str(e)
-                print(f"[API] 获取节点列表失败 (尝试 {attempt + 1}/{max_retries}): {last_error}")
-                
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2)  # 在重试之间等待2秒
-                
-        return [{"error": f"获取节点列表失败 - {last_error}"}]
+                    try:
+                        data = await response.json()
+                        print(f"[API] 获取到的节点列表数据: {data}")
+                        return data
+                    except aiohttp.ContentTypeError:
+                        # 处理非JSON响应
+                        text = await response.text()
+                        raise Exception(f"响应不是JSON格式: {text[:200]}")  # 只显示前200个字符
+        
+        def _check_success(data):
+            return isinstance(data, list)
+        
+        result = await self._retry_request(
+            request_func=_request_nodes,
+            max_retries=3,
+            timeout_seconds=10,
+            error_msg="获取节点列表",
+            success_condition=_check_success
+        )
+        
+        if isinstance(result, list):
+            return result
+        
+        # 如果请求失败或结果不符合预期
+        error_msg = result.get("error", "未知错误") if isinstance(result, dict) else str(result)
+        return [{"error": f"获取节点列表失败 - {error_msg}"}]

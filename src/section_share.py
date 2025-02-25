@@ -32,7 +32,7 @@ from qfluentwidgets import (
     TableWidget,
 )
 
-from .common import CLOUDFLARED, CURRENT_DIR, get_resource_path
+from .common import CURRENT_DIR, get_resource_path
 from .sakura_share_api import SakuraShareAPI
 from .setting import SETTING
 from .ui import *
@@ -52,9 +52,6 @@ class ShareState(QObject):
         # 初始化定时器
         self.metrics_timer = QTimer(parent)
         self.metrics_timer.setInterval(60000)  # 1分钟刷新一次
-
-        self.reregister_timer = QTimer(parent)
-        self.reregister_timer.setInterval(300000)  # 5分钟重新注册一次
 
     def update_api(self, api):
         """更新API实例"""
@@ -91,7 +88,6 @@ class AsyncWorker(QRunnable):
 
 
 class CFShareSection(QFrame):
-    request_download_cloudflared = Signal()
     show_message_signal = Signal(str, str)  # (title, message)
     status_update_signal = Signal(str)  # 添加状态更新信号
     start_timers_signal = Signal()  # 添加新的信号
@@ -118,9 +114,6 @@ class CFShareSection(QFrame):
         # 设置定时器连接
         self.metrics_timer = self.state.metrics_timer  # 保持向后兼容
         self.metrics_timer.timeout.connect(self.refresh_metrics)
-
-        self.reregister_timer = self.state.reregister_timer  # 保持向后兼容
-        self.reregister_timer.timeout.connect(self.reregister_node)
 
         # 连接信号
         self.show_message_signal.connect(self._show_message_box)
@@ -222,28 +215,26 @@ class CFShareSection(QFrame):
             lambda text: SETTING.set_value("port_override", text.strip())
         )
 
-        # 添加隧道模式相关的UI组件
-        self.tunnel_frame = QFrame()
-        tunnel_layout = QVBoxLayout(self.tunnel_frame)
-        tunnel_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.custom_tunnel_url_input = UiLineEdit("可选，自定义隧道URL")
-        if hasattr(SETTING, "custom_tunnel_url"):
-            self.custom_tunnel_url_input.setText(SETTING.custom_tunnel_url)
-        tunnel_layout.addLayout(UiOptionRow("隧道URL", self.custom_tunnel_url_input))
-        self.custom_tunnel_url_input.textChanged.connect(
-            lambda text: SETTING.set_value("custom_tunnel_url", text.strip())
-        )
-
-        layout.addWidget(self.tunnel_frame)
-        # 根据当前模式设置隧道组件的可见性
-        self.tunnel_frame.setVisible(SETTING.share_mode == "tunnel")
-
         self.status_label = QLabel("状态: 未运行")
         layout.addWidget(self.status_label)
 
         self.slots_status_label = QLabel("在线slot数量: 未知")
         layout.addWidget(self.slots_status_label)
+
+        # 添加节点列表显示
+        self.nodes_label = QLabel("节点列表: 未获取")
+        self.nodes_label.setWordWrap(True)
+        self.nodes_label.setTextFormat(Qt.RichText)
+        self.nodes_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(0, 0, 0, 0.03);
+                border-radius: 5px;
+                padding: 8px;
+                margin-top: 5px;
+                margin-bottom: 5px;
+            }
+        """)
+        layout.addWidget(self.nodes_label)
 
         # 添加说明文本
         description = QLabel()
@@ -305,42 +296,88 @@ class CFShareSection(QFrame):
 
         layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-        # 监听共享模式变化
-        SETTING.value_changed.connect(self._on_setting_changed)
-
-    def _on_setting_changed(self, key, value):
-        """处理设置变化"""
-        if key == "share_mode":
-            # 更新隧道相关UI组件的可见性
-            self.tunnel_frame.setVisible(value == "tunnel")
-            # 如果正在运行，提示需要重启
-            if self.api and self.api.is_running:
-                UiInfoBarWarning(self, "修改共享模式后需要重新启动分享才能生效。")
-
     def init_metrics_page(self):
         """初始化指标统计页面"""
         layout = QVBoxLayout(self.metrics_page)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # 创建表格
-        self.metrics_table = TableWidget(self)
-        self.metrics_table.setColumnCount(2)
-        self.metrics_table.setHorizontalHeaderLabels(["指标", "值"])
-        self.metrics_table.verticalHeader().setVisible(False)
-        self.metrics_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # 创建子页面切换控件
+        self.metrics_pivot = SegmentedWidget()
+        self.metrics_stacked_widget = QStackedWidget()
 
-        # 初始化指标数据
-        self._init_metrics_data()
+        # 创建LlamaCpp和SGLang两个子页面
+        self.llamacpp_page = QWidget()
+        self.sglang_page = QWidget()
 
-        layout.addWidget(self.metrics_table)
+        # 初始化LlamaCpp页面
+        self.init_llamacpp_page()
+        
+        # 初始化SGLang页面
+        self.init_sglang_page()
+
+        def add_metrics_sub_interface(widget: QWidget, object_name, text):
+            widget.setObjectName(object_name)
+            self.metrics_stacked_widget.addWidget(widget)
+            self.metrics_pivot.addItem(
+                routeKey=object_name,
+                text=text,
+                onClick=lambda: self.metrics_stacked_widget.setCurrentWidget(widget),
+            )
+
+        add_metrics_sub_interface(self.llamacpp_page, "llamacpp_page", "LlamaCpp")
+        add_metrics_sub_interface(self.sglang_page, "sglang_page", "SGLang")
+
+        self.metrics_pivot.setCurrentItem(self.metrics_stacked_widget.currentWidget().objectName())
+
+        layout.addWidget(self.metrics_pivot)
+        layout.addWidget(self.metrics_stacked_widget)
 
         # 添加刷新按钮
         self.refresh_metrics_button = PushButton(FIF.SYNC, "刷新数据")
         self.refresh_metrics_button.clicked.connect(self.refresh_metrics)
         layout.addWidget(self.refresh_metrics_button)
 
-    def _init_metrics_data(self):
-        """初始化指标数据和提示信息"""
+    def init_llamacpp_page(self):
+        """初始化LlamaCpp指标页面"""
+        layout = QVBoxLayout(self.llamacpp_page)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # 创建表格
+        self.llamacpp_table = TableWidget(self)
+        self.llamacpp_table.setColumnCount(2)
+        self.llamacpp_table.setHorizontalHeaderLabels(["指标", "值"])
+        self.llamacpp_table.verticalHeader().setVisible(False)
+        self.llamacpp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        # 初始化指标数据
+        self._init_llamacpp_metrics_data()
+
+        layout.addWidget(self.llamacpp_table)
+
+    def init_sglang_page(self):
+        """初始化SGLang指标页面"""
+        layout = QVBoxLayout(self.sglang_page)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # 创建表格
+        self.sglang_table = TableWidget(self)
+        self.sglang_table.setColumnCount(2)
+        self.sglang_table.setHorizontalHeaderLabels(["指标", "值"])
+        self.sglang_table.verticalHeader().setVisible(False)
+        self.sglang_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        # 初始化指标数据
+        self._init_sglang_metrics_data()
+
+        layout.addWidget(self.sglang_table)
+        
+        # 添加模型信息标签
+        self.model_info_label = QLabel("模型: 未知")
+        self.model_info_label.setWordWrap(True)
+        layout.addWidget(self.model_info_label)
+
+    def _init_llamacpp_metrics_data(self):
+        """初始化LlamaCpp指标数据和提示信息"""
         metrics_data = [
             ("提示词 tokens 总数", "暂无数据"),
             ("提示词处理总时间", "暂无数据"),
@@ -371,12 +408,57 @@ class CFShareSection(QFrame):
             "延迟的请求数": "被延迟的请求数",
         }
 
-        self.metrics_table.setRowCount(len(metrics_data))
+        self.llamacpp_table.setRowCount(len(metrics_data))
         for row, (metric, value) in enumerate(metrics_data):
-            self.metrics_table.setItem(row, 0, QTableWidgetItem(metric))
-            self.metrics_table.setItem(row, 1, QTableWidgetItem(value))
+            self.llamacpp_table.setItem(row, 0, QTableWidgetItem(metric))
+            self.llamacpp_table.setItem(row, 1, QTableWidgetItem(value))
             if metric in tooltips:
-                self.metrics_table.item(row, 0).setToolTip(tooltips[metric])
+                self.llamacpp_table.item(row, 0).setToolTip(tooltips[metric])
+
+    def _init_sglang_metrics_data(self):
+        """初始化SGLang指标数据和提示信息"""
+        metrics_data = [
+            ("Token使用率", "暂无数据"),
+            ("缓存命中率", "暂无数据"),
+            ("推测解码接受长度", "暂无数据"),
+            ("提示词tokens总数", "暂无数据"),
+            ("生成tokens总数", "暂无数据"),
+            ("请求总数", "暂无数据"),
+            ("首token平均时间", "暂无数据"),
+            ("请求平均延迟", "暂无数据"),
+            ("每token平均时间", "暂无数据"),
+            ("当前运行请求数", "暂无数据"),
+            ("当前使用tokens数", "暂无数据"),
+            ("生成吞吐量", "暂无数据"),
+            ("队列中请求数", "暂无数据"),
+        ]
+
+        tooltips = {
+            "Token使用率": "当前token使用率",
+            "缓存命中率": "前缀缓存命中率",
+            "推测解码接受长度": "推测解码的平均接受长度",
+            "提示词tokens总数": "已处理的提示词tokens总数",
+            "生成tokens总数": "已生成的tokens总数",
+            "请求总数": "已处理的请求总数",
+            "首token平均时间": "生成第一个token的平均时间",
+            "请求平均延迟": "端到端请求的平均延迟",
+            "每token平均时间": "每个输出token的平均时间",
+            "当前运行请求数": "当前正在运行的请求数",
+            "当前使用tokens数": "当前使用的tokens数量",
+            "生成吞吐量": "生成吞吐量(tokens/秒)",
+            "队列中请求数": "等待队列中的请求数",
+        }
+
+        self.sglang_table.setRowCount(len(metrics_data))
+        for row, (metric, value) in enumerate(metrics_data):
+            self.sglang_table.setItem(row, 0, QTableWidgetItem(metric))
+            self.sglang_table.setItem(row, 1, QTableWidgetItem(value))
+            if metric in tooltips:
+                self.sglang_table.item(row, 0).setToolTip(tooltips[metric])
+
+    def _init_metrics_data(self):
+        """初始化指标数据和提示信息 - 保留向后兼容"""
+        self._init_llamacpp_metrics_data()
 
     def init_ranking_page(self):
         """初始化排名页面"""
@@ -437,18 +519,66 @@ class CFShareSection(QFrame):
             logging.error(f"获取指标失败: {metrics['error']}")
             return
 
-        for row in range(self.metrics_table.rowCount()):
-            metric_item = self.metrics_table.item(row, 0)
-            value_item = self.metrics_table.item(row, 1)
+        # 保存当前指标数据，用于键值查找
+        self.current_metrics = metrics
+
+        # 检查是否为SGLang指标
+        is_sglang = metrics.get("_is_sglang", 0) > 0
+        
+        # 获取当前选中的标签页
+        current_page = self.metrics_stacked_widget.currentWidget().objectName()
+        
+        # 根据指标类型更新相应的表格
+        if is_sglang:
+            # 更新SGLang指标
+            self._update_sglang_metrics(metrics)
+            # 如果当前不是SGLang页面，提示用户并询问是否切换
+            if current_page != "sglang_page":
+                self._switch_metrics_tab("sglang_page", "检测到SGLang指标数据")
+        else:
+            # 更新LlamaCpp指标
+            self._update_llamacpp_metrics(metrics)
+            # 如果当前不是LlamaCpp页面，提示用户并询问是否切换
+            if current_page != "llamacpp_page":
+                self._switch_metrics_tab("llamacpp_page", "检测到LlamaCpp指标数据")
+
+    def _update_llamacpp_metrics(self, metrics):
+        """更新LlamaCpp指标表格"""
+        for row in range(self.llamacpp_table.rowCount()):
+            metric_item = self.llamacpp_table.item(row, 0)
+            value_item = self.llamacpp_table.item(row, 1)
             if metric_item and value_item:
                 metric_text = metric_item.text()
-                key = self.get_metric_key(metric_text)
+                key = self.get_llamacpp_metric_key(metric_text)
                 if key in metrics:
                     value = metrics[key]
-                    self._format_metric_value(value_item, key, value)
+                    self._format_llamacpp_metric_value(value_item, key, value)
 
-    def _format_metric_value(self, item, key, value):
-        """格式化指标值"""
+    def _update_sglang_metrics(self, metrics):
+        """更新SGLang指标表格"""
+        # 更新模型信息
+        model_name = metrics.get("_model_name", "未知")
+        self.model_info_label.setText(f"模型: {model_name}")
+        
+        for row in range(self.sglang_table.rowCount()):
+            metric_item = self.sglang_table.item(row, 0)
+            value_item = self.sglang_table.item(row, 1)
+            if metric_item and value_item:
+                metric_text = metric_item.text()
+                key = self.get_sglang_metric_key(metric_text)
+                if key in metrics:
+                    value = metrics[key]
+                    self._format_sglang_metric_value(value_item, key, value, metrics)
+                else:
+                    # 尝试查找匹配的前缀
+                    base_key = key.split("{")[0] if "{" in key else key
+                    matching_keys = [k for k in metrics.keys() if k.startswith(base_key + "{") or k == base_key]
+                    if matching_keys:
+                        value = metrics[matching_keys[0]]
+                        self._format_sglang_metric_value(value_item, matching_keys[0], value, metrics)
+
+    def _format_llamacpp_metric_value(self, item, key, value):
+        """格式化LlamaCpp指标值"""
         try:
             if key in ["prompt_tokens_total", "tokens_predicted_total"]:
                 item.setText(f"{float(value):.0f} tokens")
@@ -471,17 +601,122 @@ class CFShareSection(QFrame):
         except ValueError:
             item.setText(str(value))
 
+    def _format_sglang_metric_value(self, item, key, value, metrics):
+        """格式化SGLang指标值"""
+        try:
+            # 提取基础键名（不包含模型名称部分）
+            base_key = key.split("{")[0] if "{" in key else key
+            
+            if base_key == "sglang:token_usage":
+                item.setText(f"{float(value)*100:.2f}%")
+            elif base_key == "sglang:cache_hit_rate":
+                item.setText(f"{float(value)*100:.2f}%")
+            elif base_key == "sglang:spec_accept_length":
+                item.setText(f"{float(value):.2f}")
+            elif base_key in ["sglang:prompt_tokens_total", "sglang:generation_tokens_total"]:
+                item.setText(f"{float(value):,.0f} tokens")
+            elif base_key == "sglang:num_requests_total":
+                item.setText(f"{float(value):,.0f}")
+            elif base_key in ["sglang:time_to_first_token_seconds_sum", "sglang:e2e_request_latency_seconds_sum"]:
+                # 查找对应的count指标
+                count_key = base_key.replace("_sum", "_count")
+                # 在所有键中查找匹配的count键
+                count_full_key = None
+                for k in metrics.keys():
+                    if k.startswith(count_key + "{") or k == count_key:
+                        count_full_key = k
+                        break
+                
+                count = metrics.get(count_full_key, 1) if count_full_key else 1
+                total = float(value)
+                avg = total / count if count > 0 else 0
+                item.setText(f"{avg:.2f} 秒")
+            elif base_key == "sglang:time_per_output_token_seconds_sum":
+                # 查找对应的count指标
+                count_key = base_key.replace("_sum", "_count")
+                # 在所有键中查找匹配的count键
+                count_full_key = None
+                for k in metrics.keys():
+                    if k.startswith(count_key + "{") or k == count_key:
+                        count_full_key = k
+                        break
+                    
+                count = metrics.get(count_full_key, 1) if count_full_key else 1
+                total = float(value)
+                avg = total / count if count > 0 else 0
+                item.setText(f"{avg*1000:.2f} 毫秒")
+            elif base_key in ["sglang:num_running_reqs", "sglang:num_used_tokens", "sglang:num_queue_reqs"]:
+                item.setText(f"{float(value):.0f}")
+            elif base_key == "sglang:gen_throughput":
+                item.setText(f"{float(value):.2f} tokens/s")
+            else:
+                item.setText(f"{float(value):.2f}")
+        except ValueError:
+            item.setText(str(value))
+
+    def get_llamacpp_metric_key(self, metric_text):
+        """获取LlamaCpp指标键值映射"""
+        key_map = {
+            "提示词 tokens 总数": "prompt_tokens_total",
+            "提示词处理总时间": "prompt_seconds_total",
+            "生成的 tokens 总数": "tokens_predicted_total",
+            "生成处理总时间": "tokens_predicted_seconds_total",
+            "llama_decode() 调用总次数": "n_decode_total",
+            "每次 llama_decode() 调用的平均忙碌槽位数": "n_busy_slots_per_decode",
+            "提示词平均吞吐量": "prompt_tokens_seconds",
+            "生成平均吞吐量": "predicted_tokens_seconds",
+            "KV-cache 使用率": "kv_cache_usage_ratio",
+            "KV-cache tokens": "kv_cache_tokens",
+            "正在处理的请求数": "requests_processing",
+            "延迟的请求数": "requests_deferred",
+        }
+        return key_map.get(metric_text, "")
+
+    def get_sglang_metric_key(self, metric_text):
+        """获取SGLang指标键值映射"""
+        base_key_map = {
+            "Token使用率": "sglang:token_usage",
+            "缓存命中率": "sglang:cache_hit_rate",
+            "推测解码接受长度": "sglang:spec_accept_length",
+            "提示词tokens总数": "sglang:prompt_tokens_total",
+            "生成tokens总数": "sglang:generation_tokens_total",
+            "请求总数": "sglang:num_requests_total",
+            "首token平均时间": "sglang:time_to_first_token_seconds_sum",
+            "请求平均延迟": "sglang:e2e_request_latency_seconds_sum",
+            "每token平均时间": "sglang:time_per_output_token_seconds_sum",
+            "当前运行请求数": "sglang:num_running_reqs",
+            "当前使用tokens数": "sglang:num_used_tokens",
+            "生成吞吐量": "sglang:gen_throughput",
+            "队列中请求数": "sglang:num_queue_reqs",
+        }
+        
+        base_key = base_key_map.get(metric_text, "")
+        
+        # 如果找不到基础键，直接返回空字符串
+        if not base_key:
+            return ""
+        
+        # 在metrics字典中查找匹配的完整键（包含模型名称）
+        for full_key in self.current_metrics.keys() if hasattr(self, 'current_metrics') else []:
+            if full_key.startswith(base_key + "{"):
+                return full_key
+        
+        # 如果没有找到匹配的完整键，返回基础键
+        return base_key
+
+    def get_metric_key(self, metric_text):
+        """获取指标键值映射 - 保留向后兼容"""
+        return self.get_llamacpp_metric_key(metric_text)
+
     @Slot()
     def _start_timers(self):
         """在主线程中启动定时器"""
         self.metrics_timer.start()
-        self.reregister_timer.start()
 
     @Slot()
     def _stop_timers(self):
         """在主线程中停止定时器"""
         self.metrics_timer.stop()
-        self.reregister_timer.stop()
 
     @Slot()
     def start_cf_share(self):
@@ -514,9 +749,7 @@ class CFShareSection(QFrame):
         # 保存参数
         self.port = port
         self.worker_url = worker_url
-        self.share_mode = getattr(SETTING, "share_mode", "ws")
         self.tg_token = self.tg_token_input.text().strip()
-        self.custom_tunnel_url = self.custom_tunnel_url_input.text().strip()
 
         # 重置停止标志
         self._should_stop = False
@@ -537,7 +770,7 @@ class CFShareSection(QFrame):
     async def start_sharing(self):
         try:
             # 初始化API
-            self.api = SakuraShareAPI(self.port, self.worker_url, self.share_mode)
+            self.api = SakuraShareAPI(self.port, self.worker_url)
             self.state.update_api(self.api)
             
             # 检查本地服务状态
@@ -556,27 +789,12 @@ class CFShareSection(QFrame):
             except Exception:
                 pass
 
-            # 获取启动参数
-            start_params = {
-                "tg_token": self.tg_token
-            }
-
-            # 如果是隧道模式，添加隧道相关参数
-            if self.share_mode == "tunnel":
-                if self.custom_tunnel_url:
-                    start_params["custom_tunnel_url"] = self.custom_tunnel_url
-                elif os.path.exists(CLOUDFLARED):
-                    start_params["cloudflared_path"] = CLOUDFLARED
-                else:
-                    return "错误：隧道模式下必须提供自定义隧道URL或安装cloudflared"
-
             # 启动服务
-            if not await self.api.start(**start_params):
+            if not await self.api.start(self.tg_token):
                 return "错误：启动失败，请检查配置和网络连接"
 
             # 发送初始状态
-            mode_str = "WebSocket已连接" if self.share_mode == "ws" else f"隧道已连接 - {self.api.tunnel_url}"
-            self.status_update_signal.emit(f"运行中 - {mode_str}")
+            self.status_update_signal.emit("运行中 - WebSocket已连接")
             
             # 使用信号在主线程中启动定时器
             self.start_timers_signal.emit()
@@ -614,7 +832,6 @@ class CFShareSection(QFrame):
                     self.start_button.setEnabled(True)
                     self.stop_button.setEnabled(False)
                     self.metrics_timer.stop()
-                    self.reregister_timer.stop()
 
     @Slot()
     def stop_cf_share(self):
@@ -674,10 +891,18 @@ class CFShareSection(QFrame):
         self.refresh_slots_button.setEnabled(False)
         api = self.api if self.api else SakuraShareAPI(0, worker_url)
 
+        # 获取slots状态
         worker = AsyncWorker(api.get_slots_status())
         worker.signals.finished.connect(self.update_slots_status)
         worker.signals.error.connect(self.on_error_refresh_slots)
         self.thread_pool.start(worker)
+
+        # 同时获取节点列表
+        tg_token = self.tg_token_input.text().strip()
+        nodes_worker = AsyncWorker(api.get_nodes(tg_token))
+        nodes_worker.signals.finished.connect(self.update_nodes_list)
+        nodes_worker.signals.error.connect(self.on_error_refresh_nodes)
+        self.thread_pool.start(nodes_worker)
 
     @Slot(str)
     def update_slots_status(self, status):
@@ -690,6 +915,36 @@ class CFShareSection(QFrame):
         """处理刷新slots时的错误"""
         self.slots_status_label.setText(f"在线slot数量: 获取失败 - {str(error)}")
         self.refresh_slots_button.setEnabled(True)
+
+    @Slot(object)
+    def update_nodes_list(self, nodes):
+        """更新节点列表显示"""
+        if isinstance(nodes, list) and len(nodes) > 0 and not isinstance(nodes[0], dict):
+            # 处理正常的节点ID列表
+            if len(nodes) == 0:
+                self.nodes_label.setText("节点列表: 当前没有在线节点")
+                return
+                
+            nodes_text = "<b>节点列表 (Metrics IDs):</b><br>"
+            for i, node_id in enumerate(nodes):
+                nodes_text += f"{i+1}. <b>ID:</b> {node_id}<br>"
+                
+            self.nodes_label.setText(nodes_text)
+            self.nodes_label.setTextFormat(Qt.RichText)
+        elif isinstance(nodes, list) and len(nodes) > 0 and "error" in nodes[0]:
+            # 处理错误情况
+            error_msg = nodes[0]["error"]
+            self.nodes_label.setText(f"节点列表: 获取失败 - {error_msg}")
+            self.nodes_label.setTextFormat(Qt.PlainText)
+        else:
+            # 处理其他未知情况
+            self.nodes_label.setText("节点列表: 获取失败 - 未知格式")
+            self.nodes_label.setTextFormat(Qt.PlainText)
+
+    @Slot(Exception)
+    def on_error_refresh_nodes(self, error):
+        """处理刷新节点列表时的错误"""
+        self.nodes_label.setText(f"节点列表: 获取失败 - {str(error)}")
 
     @Slot()
     def refresh_ranking(self):
@@ -732,57 +987,6 @@ class CFShareSection(QFrame):
         MessageBox("错误", f"获取排名失败: {str(error)}", self).exec_()
         self.refresh_ranking_button.setEnabled(True)
 
-    def get_metric_key(self, metric_text):
-        """获取指标键值映射"""
-        key_map = {
-            "提示词 tokens 总数": "prompt_tokens_total",
-            "提示词处理总时间": "prompt_seconds_total",
-            "生成的 tokens 总数": "tokens_predicted_total",
-            "生成处理总时间": "tokens_predicted_seconds_total",
-            "llama_decode() 调用总次数": "n_decode_total",
-            "每次 llama_decode() 调用的平均忙碌槽位数": "n_busy_slots_per_decode",
-            "提示词平均吞吐量": "prompt_tokens_seconds",
-            "生成平均吞吐量": "predicted_tokens_seconds",
-            "KV-cache 使用率": "kv_cache_usage_ratio",
-            "KV-cache tokens": "kv_cache_tokens",
-            "正在处理的请求数": "requests_processing",
-            "延迟的请求数": "requests_deferred",
-        }
-        return key_map.get(metric_text, "")
-
-    @Slot()
-    def reregister_node(self):
-        """定时重新注册节点"""
-        if self.api and self.api.tunnel_url:
-            self.status_label.setText("状态: 正在重新注册节点...")
-
-            async def do_reregister():
-                success = await self.api.register_node()
-                if success:
-                    return f"运行中 - {self.api.tunnel_url}"
-                self.show_message_signal.emit(
-                    "错误", "无法重新注册节点，请检查网络连接或稍后重试"
-                )
-                return None
-
-            worker = AsyncWorker(do_reregister())
-            worker.signals.finished.connect(self.on_reregistration_finished)
-            worker.signals.error.connect(self.on_error)
-            self.thread_pool.start(worker)
-        else:
-            logging.info("API未初始化或隧道URL为空，跳过重新注册")
-            self.status_label.setText("状态: API未初始化或隧道URL为空，跳过重新注册")
-
-    @Slot(object)
-    def on_reregistration_finished(self, status):
-        """处理重新注册完成"""
-        if status:
-            self.status_label.setText(status)
-            UiInfoBarSuccess(self, "节点重新注册成功。")
-        else:
-            self.status_label.setText("状态: 重新注册失败")
-            UiInfoBarError(self, "无法重新注册节点，请检查网络连接或稍后重试。")
-
     def closeEvent(self, event):
         """处理关闭事件"""
         QTimer.singleShot(0, self.cleanup)
@@ -798,25 +1002,18 @@ class CFShareSection(QFrame):
             self.metrics_timer.stop()
             self.metrics_timer.deleteLater()
 
-        if hasattr(self, "reregister_timer"):
-            self.reregister_timer.stop()
-            self.reregister_timer.deleteLater()
-
         # API清理
         if self.api:
             try:
-
                 def cleanup_api():
                     try:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        loop.run_until_complete(self.api.take_node_offline())
+                        loop.run_until_complete(self.api.stop())
                     except Exception as e:
                         logging.error(f"Error during API cleanup: {str(e)}")
                     finally:
-                        if self.api:
-                            self.api.stop()
-                            self.api = None
+                        self.api = None
 
                 QTimer.singleShot(0, cleanup_api)
             except Exception as e:
@@ -827,3 +1024,28 @@ class CFShareSection(QFrame):
         """处理通用错误"""
         self.status_label.setText(f"状态: 错误 - {str(error)}")
         MessageBox("错误", f"操作失败: {str(error)}", self).exec_()
+
+    def _switch_metrics_tab(self, target_page, reason):
+        """智能切换指标标签页
+        
+        Args:
+            target_page: 目标页面的objectName
+            reason: 切换原因
+        """
+        # 创建一个消息框询问用户是否切换
+        msg_box = MessageBox(
+            "切换标签页",
+            f"{reason}，是否切换到对应的标签页查看？",
+            self
+        )
+        msg_box.yesButton.setText("切换")
+        msg_box.cancelButton.setText("保持当前页面")
+        
+        if msg_box.exec_() == MessageBox.DialogCode.Accepted:
+            # 用户选择切换，设置当前项
+            self.metrics_pivot.setCurrentItem(target_page)
+            # 同时切换堆叠小部件的当前页面
+            for i in range(self.metrics_stacked_widget.count()):
+                if self.metrics_stacked_widget.widget(i).objectName() == target_page:
+                    self.metrics_stacked_widget.setCurrentIndex(i)
+                    break

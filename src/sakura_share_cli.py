@@ -16,20 +16,15 @@ async def main():
     parser.add_argument("--worker-url", type=str, default="https://sakura-share.one", required=False, help="Worker URL, default is https://sakura-share.one")
     parser.add_argument("--tg-token", type=str, help="Telegram token (optional)")
     parser.add_argument("--action", choices=["start", "stop", "status", "metrics", "ranking", "nodes"], required=True, help="Action to perform")
-    parser.add_argument("--mode", choices=["ws", "tunnel"], default="tunnel", help="Operation mode: ws (WebSocket) or tunnel (default)")
-    parser.add_argument("--cloudflared-path", type=str, help="Path to cloudflared executable (required for tunnel mode if custom-tunnel-url not provided)")
-    parser.add_argument("--custom-tunnel-url", type=str, help="Custom tunnel URL (optional for tunnel mode)")
+    parser.add_argument("--mode", choices=["ws"], default="ws", help="Operation mode: ws (WebSocket)")
+    parser.add_argument("--custom-tunnel-url", type=str, help="Custom tunnel URL (optional)")
 
     args = parser.parse_args()
-
-    # 验证参数
-    if args.action == "start" and args.mode == "tunnel" and not (args.cloudflared_path or args.custom_tunnel_url):
-        parser.error("在tunnel模式下必须提供--cloudflared-path或--custom-tunnel-url参数")
 
     api = SakuraShareAPI(args.port, args.worker_url, args.mode)
 
     if args.action == "start":
-        await start_sharing(api, args.tg_token, args.cloudflared_path, args.custom_tunnel_url)
+        await start_sharing(api, args.tg_token)
     elif args.action == "stop":
         await stop_sharing(api)
     elif args.action == "status":
@@ -41,7 +36,7 @@ async def main():
     elif args.action == "nodes":
         await get_nodes(api, args.tg_token)
 
-async def start_sharing(api: SakuraShareAPI, tg_token: str, cloudflared_path: Optional[str] = None, custom_tunnel_url: Optional[str] = None):
+async def start_sharing(api: SakuraShareAPI, tg_token: str):
     stop_event = asyncio.Event()
     
     def signal_handler():
@@ -57,7 +52,7 @@ async def start_sharing(api: SakuraShareAPI, tg_token: str, cloudflared_path: Op
         signal.signal(signal.SIGTERM, lambda s, f: signal_handler())
 
     try:
-        if await api.start(cloudflared_path, custom_tunnel_url, tg_token):
+        if await api.start(tg_token):
             print("成功启动分享")
             
             while not stop_event.is_set():

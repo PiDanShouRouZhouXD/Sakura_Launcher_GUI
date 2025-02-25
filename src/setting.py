@@ -18,7 +18,6 @@ class Setting(QObject):
     no_context_check = False
     token = ""
     port_override = ""
-    share_mode = "ws"  # 默认使用WebSocket模式
 
     # 各个属性的专用信号
     llamacpp_path_changed = Signal(str)
@@ -32,7 +31,6 @@ class Setting(QObject):
     no_context_check_changed = Signal(bool)
     token_changed = Signal(str)
     port_override_changed = Signal(str)
-    share_mode_changed = Signal(str)
 
     # 通用的值变化信号
     value_changed = Signal(str, object)  # (key, value)
@@ -53,7 +51,6 @@ class Setting(QObject):
             self.no_context_check_changed,
             self.token_changed,
             self.port_override_changed,
-            self.share_mode_changed,
         ]:
             sig.connect(lambda: self.save_settings())
 
@@ -106,7 +103,6 @@ class Setting(QObject):
             "no_context_check": self.no_context_check,
             "token": self.token,
             "port_override": self.port_override,
-            "share_mode": self.share_mode,
         }
         current_settings = self._read_settings()
         current_settings.update(settings)
@@ -127,7 +123,6 @@ class Setting(QObject):
         self.no_context_check = settings.get("no_context_check", False)
         self.token = settings.get("token", "")
         self.port_override = settings.get("port_override", "")
-        self.share_mode = settings.get("share_mode", "ws")
 
         # 兼容 v1.0.0-beta
         if type(self.model_search_paths) == list:

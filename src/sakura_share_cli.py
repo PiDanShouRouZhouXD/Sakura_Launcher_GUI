@@ -17,7 +17,6 @@ async def main():
     parser.add_argument("--tg-token", type=str, help="Telegram token (optional)")
     parser.add_argument("--action", choices=["start", "stop", "status", "metrics", "ranking", "nodes"], required=True, help="Action to perform")
     parser.add_argument("--mode", choices=["ws"], default="ws", help="Operation mode: ws (WebSocket)")
-    parser.add_argument("--custom-tunnel-url", type=str, help="Custom tunnel URL (optional)")
 
     args = parser.parse_args()
 

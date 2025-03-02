@@ -58,9 +58,7 @@ async def start_sharing(api: SakuraShareAPI, tg_token: str):
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=600)
                 except asyncio.TimeoutError:
-                    if not await api.register_node(tg_token):
-                        print("重新连接失败，停止分享")
-                        break
+                    pass
         else:
             print("启动失败，请检查配置和网络连接")
     except Exception as e:

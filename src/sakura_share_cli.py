@@ -20,7 +20,7 @@ async def main():
 
     args = parser.parse_args()
 
-    api = SakuraShareAPI(args.port, args.worker_url, args.mode)
+    api = SakuraShareAPI(args.port, args.worker_url)
 
     if args.action == "start":
         await start_sharing(api, args.tg_token)

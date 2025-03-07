@@ -479,6 +479,11 @@ class CFShareSection(QFrame):
     @Slot()
     def refresh_metrics(self):
         """刷新指标数据"""
+        # 添加检查，如果正在停止过程中，则不继续刷新
+        if self._should_stop:
+            self.refresh_metrics_button.setEnabled(True)
+            return
+            
         worker_url = self.worker_url_input.text().strip()
         if not worker_url:
             MessageBox("错误", "请先设置链接", self).exec_()
@@ -504,6 +509,8 @@ class CFShareSection(QFrame):
                 return
 
         self.refresh_metrics_button.setEnabled(False)
+        
+        # 无论是否已启动API，都创建一个新的临时API进行刷新操作
         api = self.api if self.api else SakuraShareAPI(port, worker_url)
 
         worker = AsyncWorker(api.get_metrics())
@@ -838,6 +845,10 @@ class CFShareSection(QFrame):
         """停止共享服务"""
         self._should_stop = True
         
+        # 立即停止定时器，防止在停止期间继续触发刷新
+        self.metrics_timer.stop()
+        self.stop_timers_signal.emit()
+        
         if self.api:
             async def stop_api():
                 api = self.api
@@ -855,9 +866,6 @@ class CFShareSection(QFrame):
             worker.signals.error.connect(self._handle_stop_error)
             self.thread_pool.start(worker)
         
-        # 停止定时器
-        self.stop_timers_signal.emit()
-        
         # 更新UI状态
         self.status_label.setText("状态: 正在停止...")
         self.start_button.setEnabled(False)
@@ -866,6 +874,12 @@ class CFShareSection(QFrame):
     @Slot()
     def _handle_stop_finished(self, error_msg=None):
         """处理停止完成的回调"""
+        # 确保定时器已经停止
+        self.metrics_timer.stop()
+        
+        # 重置停止标志，使刷新功能恢复可用
+        self._should_stop = False
+        
         if error_msg:
             self.show_message_signal.emit("错误", f"停止时发生错误: {error_msg}")
         
@@ -877,7 +891,14 @@ class CFShareSection(QFrame):
     def _handle_stop_error(self, error):
         """处理停止时的错误"""
         print(f"[Share] 停止过程中发生错误: {error}")
-        self._handle_stop_finished()  # 仍然执行清理操作
+        # 重置停止标志，即使出错也能恢复刷新功能
+        self._should_stop = False
+        
+        # 更新UI状态
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.status_label.setText(f"状态: 停止失败 - {str(error)}")
+        self.show_message_signal.emit("错误", f"停止过程中发生错误: {str(error)}")
 
     @Slot()
     def refresh_slots(self):
@@ -949,6 +970,11 @@ class CFShareSection(QFrame):
     @Slot()
     def refresh_ranking(self):
         """刷新排名数据"""
+        # 添加检查，如果正在停止过程中，则不继续刷新
+        if self._should_stop:
+            self.refresh_ranking_button.setEnabled(True)
+            return
+            
         worker_url = self.worker_url_input.text().strip()
         if not worker_url:
             MessageBox("错误", "请先设置链接", self).exec_()
@@ -1023,6 +1049,9 @@ class CFShareSection(QFrame):
     def on_error(self, error):
         """处理通用错误"""
         self.status_label.setText(f"状态: 错误 - {str(error)}")
+        # 确保按钮恢复可用状态
+        self.refresh_metrics_button.setEnabled(True)
+        self.refresh_ranking_button.setEnabled(True)
         MessageBox("错误", f"操作失败: {str(error)}", self).exec_()
 
     def _switch_metrics_tab(self, target_page, reason):

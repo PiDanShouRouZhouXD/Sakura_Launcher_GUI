@@ -1061,20 +1061,11 @@ class CFShareSection(QFrame):
             target_page: 目标页面的objectName
             reason: 切换原因
         """
-        # 创建一个消息框询问用户是否切换
-        msg_box = MessageBox(
-            "切换标签页",
-            f"{reason}，是否切换到对应的标签页查看？",
-            self
-        )
-        msg_box.yesButton.setText("切换")
-        msg_box.cancelButton.setText("保持当前页面")
-        
-        if msg_box.exec_() == MessageBox.DialogCode.Accepted:
-            # 用户选择切换，设置当前项
-            self.metrics_pivot.setCurrentItem(target_page)
-            # 同时切换堆叠小部件的当前页面
-            for i in range(self.metrics_stacked_widget.count()):
-                if self.metrics_stacked_widget.widget(i).objectName() == target_page:
-                    self.metrics_stacked_widget.setCurrentIndex(i)
-                    break
+        # 直接切换标签页，不再弹出提示
+        # 设置当前项
+        self.metrics_pivot.setCurrentItem(target_page)
+        # 同时切换堆叠小部件的当前页面
+        for i in range(self.metrics_stacked_widget.count()):
+            if self.metrics_stacked_widget.widget(i).objectName() == target_page:
+                self.metrics_stacked_widget.setCurrentIndex(i)
+                break

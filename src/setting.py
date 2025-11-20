@@ -21,6 +21,7 @@ class Setting(QObject):
 
     # 各个属性的专用信号
     llamacpp_path_changed = Signal(str)
+    gguf_path_changed = Signal(str)
     model_search_paths_changed = Signal(str)
     model_sort_option_changed = Signal(str)
     remember_window_state_changed = Signal(bool)
@@ -41,6 +42,7 @@ class Setting(QObject):
 
         for sig in [
             self.llamacpp_path_changed,
+            self.gguf_path_changed,
             self.model_search_paths_changed,
             self.model_sort_option_changed,
             self.remember_window_state_changed,
@@ -91,6 +93,7 @@ class Setting(QObject):
     def save_settings(self):
         settings = {
             "llamacpp_path": self.llamacpp_path,
+            "gguf_path": self.gguf_path,
             "model_search_paths": self.model_search_paths,
             "model_sort_option": self.model_sort_option,
             "remember_window_state": self.remember_window_state,
@@ -111,6 +114,7 @@ class Setting(QObject):
     def _load_settings(self):
         settings = self._read_settings()
         self.llamacpp_path = settings.get("llamacpp_path", "")
+        self.gguf_path = settings.get("gguf_path", "")
         self.model_search_paths = settings.get("model_search_paths", "")
         self.model_sort_option = settings.get("model_sort_option", "修改时间")
         self.remember_window_state = settings.get("remember_window_state", False)

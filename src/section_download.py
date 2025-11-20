@@ -232,7 +232,8 @@ class DownloadSection(QFrame):
 
         description = UiDescription(
             """
-        <p>您可以在这里下载不同版本的模型，模型会保存到启动器所在的目录。如果启动器无法下载，您也可以手动从<a href="https://huggingface.co/SakuraLLM/">Hugging Face镜像站</a>下载模型，将下载的gguf文件放到启动器所在文件夹下即可。</p>
+        <p>您可以在这里下载不同版本的模型，模型会保存到Sakura模型文件夹。如果启动器无法下载，您也可以手动从<a href="https://huggingface.co/SakuraLLM/">Hugging Face镜像站</a>下载模型，将下载的gguf文件放到Sakura模型文件夹下即可。</p>
+        <p>Sakura模型文件夹可以前往设置选项卡修改，默认文件夹为启动器所在的文件夹。</p>
         <p>翻译Galgame推荐使用7B模型，12G以下显存可用。翻译小说推荐使用14B模型，需要12G及以上显存。</p>
         """
         )

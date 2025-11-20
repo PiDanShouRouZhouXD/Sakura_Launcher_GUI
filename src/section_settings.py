@@ -221,7 +221,7 @@ class SettingsSection(QFrame):
         llamacpp_path.textChanged.connect(
             lambda text: SETTING.set_value("llamacpp_path", text)
         )
-        gguf_path = UiLineEdit("可选，手动指定Sakura模型下载路径", SETTING.gguf_path)
+        gguf_path = UiLineEdit("可选，手动指定Sakura模型下载路径，默认为启动器所在的文件夹", SETTING.gguf_path)
         gguf_path.textChanged.connect(
             lambda text: SETTING.set_value("gguf_path", text)
         )

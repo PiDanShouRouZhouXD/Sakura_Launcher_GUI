@@ -24,6 +24,7 @@ from .common import CURRENT_DIR, get_resource_path, GHPROXY_URL
 from .llamacpp import *
 from .sakura import SAKURA_LIST, Sakura
 from .ui import *
+from src.setting import *
 
 
 def UiDescription(html):
@@ -99,6 +100,7 @@ class DownloadTask:
     name: str
     url: str
     filename: str
+    filepath: str = None
     state: DownloadTaskState = DownloadTaskState.RUNNING
 
 
@@ -107,10 +109,11 @@ class DownloadThread(QThread):
     sig_success = Signal()
     sig_error = Signal(str)
 
-    def __init__(self, url, filename):
+    def __init__(self, url, filename, filepath = None):
         super().__init__()
         self.url = url
         self.filename = filename
+        self.filepath = filepath
         self._is_finished = False
 
     def run(self):
@@ -123,7 +126,7 @@ class DownloadThread(QThread):
             block_size = 1024  # 1 KB
             downloaded_size = 0
 
-            file_path = os.path.join(CURRENT_DIR, self.filename)
+            file_path = os.path.join(self.filepath if self.filepath else CURRENT_DIR, self.filename)
             with open(file_path, "wb") as file:
                 for data in response.iter_content(block_size):
                     size = file.write(data)
@@ -229,7 +232,8 @@ class DownloadSection(QFrame):
 
         description = UiDescription(
             """
-        <p>您可以在这里下载不同版本的模型，模型会保存到启动器所在的目录。如果启动器无法下载，您也可以手动从<a href="https://huggingface.co/SakuraLLM/">Hugging Face镜像站</a>下载模型，将下载的gguf文件放到启动器所在文件夹下即可。</p>
+        <p>您可以在这里下载不同版本的模型，模型会保存到Sakura模型文件夹。如果启动器无法下载，您也可以手动从<a href="https://huggingface.co/SakuraLLM/">Hugging Face镜像站</a>下载模型，将下载的gguf文件放到Sakura模型文件夹下即可。</p>
+        <p>Sakura模型文件夹可以前往设置选项卡修改，默认文件夹为启动器所在的文件夹。</p>
         <p>翻译Galgame推荐使用7B模型，12G以下显存可用。翻译小说推荐使用14B模型，需要12G及以上显存。</p>
         """
         )
@@ -335,7 +339,7 @@ class DownloadSection(QFrame):
             QApplication.processEvents()  # 确保UI更新
             UiInfoBarError(self, f"{new_task.name}下载失败", content=f"{error_message}")
 
-        thread = DownloadThread(new_task.url, new_task.filename)
+        thread = DownloadThread(new_task.url, new_task.filename, new_task.filepath)
         thread.sig_progress.connect(progress_bar.setValue)
         thread.sig_success.connect(on_finish)
         thread.sig_error.connect(on_error)
@@ -343,7 +347,8 @@ class DownloadSection(QFrame):
 
         self.download_threads.append(thread)
 
-        logging.info(f"开始下载: URL={new_task.url}, 文件名={new_task.filename}")
+        file_path = os.path.join(new_task.filepath if new_task.filepath else CURRENT_DIR, new_task.filename)
+        logging.info(f"开始下载: URL={new_task.url}, 文件路径={file_path}")
         UiInfoBarSuccess(self, f"{new_task.name}开始下载，请在下载进度页面查看进度")
 
     def _update_current_llamacpp_version(self):
@@ -355,14 +360,18 @@ class DownloadSection(QFrame):
 
     def start_download_sakura(self, sakura: Sakura):
         src = self.sakura_download_src
+        gguf_path = SETTING.gguf_path.strip()
+        if not gguf_path:
+            gguf_path = CURRENT_DIR
         task = DownloadTask(
             name="Sakura模型",
             url=sakura.download_links[src],
             filename=sakura.filename,
+            filepath=gguf_path,
         )
 
         def on_download_sakura_finish():
-            file_path = os.path.join(CURRENT_DIR, task.filename)
+            file_path = os.path.join(gguf_path, task.filename)
             if sakura.check_sha256(file_path):
                 task.state = DownloadTaskState.SUCCESS
                 UiInfoBarSuccess(self, f"{task.name}下载成功")

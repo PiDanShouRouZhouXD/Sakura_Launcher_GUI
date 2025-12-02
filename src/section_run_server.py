@@ -191,7 +191,8 @@ class RunServerSection(QFrame):
         self.model_path.clear()
         models = []
         paths = SETTING.model_search_paths.split("\n")
-        search_paths = [CURRENT_DIR] + [path.strip() for path in paths if path.strip()]
+        gguf_path = SETTING.gguf_path.strip()
+        search_paths = [CURRENT_DIR, gguf_path] + [path.strip() for path in paths if path.strip()]
         logging.debug(f"搜索路径: {search_paths}")
         for path in search_paths:
             logging.debug(f"正在搜索路径: {path}")

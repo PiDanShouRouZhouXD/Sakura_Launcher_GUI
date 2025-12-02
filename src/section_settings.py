@@ -221,6 +221,10 @@ class SettingsSection(QFrame):
         llamacpp_path.textChanged.connect(
             lambda text: SETTING.set_value("llamacpp_path", text)
         )
+        gguf_path = UiLineEdit("可选，手动指定Sakura模型下载路径，默认为启动器所在的文件夹", SETTING.gguf_path)
+        gguf_path.textChanged.connect(
+            lambda text: SETTING.set_value("gguf_path", text)
+        )
         model_search_paths = TextEdit()
         model_search_paths.setPlaceholderText(
             "模型搜索路径（每行一个路径，已经默认包含当前目录）"
@@ -240,6 +244,7 @@ class SettingsSection(QFrame):
             no_context_check,
             UiOptionRow("模型列表排序", model_sort_combo),
             UiOptionRow("llama.cpp文件夹", llamacpp_path),
+            UiOptionRow("Sakura模型文件夹", gguf_path),
             UiOptionCol("模型搜索路径", model_search_paths),
         )
 

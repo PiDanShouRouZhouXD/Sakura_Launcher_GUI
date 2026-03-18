@@ -260,6 +260,7 @@ class RunServerSection(QFrame):
         self.gpu_combo.clear()
         self.nvidia_gpus = self.main_window.gpu_manager.nvidia_gpus
         self.amd_gpus = self.main_window.gpu_manager.amd_gpus
+        self.apple_gpus = self.main_window.gpu_manager.apple_gpus
 
         # 优先添加NVIDIA GPU
         if self.nvidia_gpus:
@@ -269,8 +270,12 @@ class RunServerSection(QFrame):
         if self.amd_gpus:
             self.gpu_combo.addItems(self.amd_gpus)
 
-        if not self.nvidia_gpus and not self.amd_gpus:
-            logging.warning("未检测到NVIDIA或AMD GPU")
+        # Apple Silicon (MPS)
+        if self.apple_gpus:
+            self.gpu_combo.addItems(self.apple_gpus)
+
+        if not self.nvidia_gpus and not self.amd_gpus and not self.apple_gpus:
+            logging.warning("未检测到NVIDIA、AMD或Apple(MPS) GPU")
 
         self.gpu_combo.addItems(["自动"])
 
@@ -302,7 +307,6 @@ class RunServerSection(QFrame):
         self.update_context_per_thread()
 
     def update_slider_from_input(self, value):
-
         value = round(value / 256) * 256
         slider_value = self.context_to_slider(value)
         slider_value = max(0, min(10000, slider_value))
@@ -335,8 +339,27 @@ class RunServerSection(QFrame):
         gpu_manager.detect_gpus()
         selected_gpu_display = self.gpu_combo.currentText()
 
+        if selected_gpu_display == "自动":
+            selected_gpu_display = next(
+                (
+                    item
+                    for item in (
+                        gpu_manager.nvidia_gpus
+                        + gpu_manager.amd_gpus
+                        + gpu_manager.apple_gpus
+                    )
+                    if item
+                ),
+                None,
+            )
+            if not selected_gpu_display:
+                UiInfoBarWarning(self, "请先选择一个GPU")
+                return
+
         # 从显示名称中找到对应的GPU key
-        gpu_key = GPUDisplayHelper.find_gpu_key(selected_gpu_display, gpu_manager.gpu_info_map)
+        gpu_key = GPUDisplayHelper.find_gpu_key(
+            selected_gpu_display, gpu_manager.gpu_info_map
+        )
         if not gpu_key:
             UiInfoBarWarning(self, "请先选择一个GPU")
             return
@@ -346,6 +369,16 @@ class RunServerSection(QFrame):
         ability = gpu_manager.check_gpu_ability(selected_gpu_display, model_name)
         if not ability.is_capable:
             UiInfoBarWarning(self, ability.reason)
+            return
+
+        if (
+            gpu_info.avail_dedicated_gpu_memory is None
+            or gpu_info.dedicated_gpu_memory is None
+        ):
+            UiInfoBarWarning(
+                self,
+                "当前GPU无法获取可用显存信息，暂不支持自动配置，请手动调整上下文和并发。",
+            )
             return
 
         available_memory_gib = gpu_info.avail_dedicated_gpu_memory / (2**30)
@@ -461,9 +494,12 @@ class RunServerSection(QFrame):
                     else:
                         # 如果找不到完整的显示名称，尝试在当前GPU列表中查找匹配的名称部分
                         from src.gpu import GPUDisplayHelper
+
                         for i in range(self.gpu_combo.count()):
                             current_text = self.gpu_combo.itemText(i)
-                            if GPUDisplayHelper.match_gpu_name(current_text, gpu_setting):
+                            if GPUDisplayHelper.match_gpu_name(
+                                current_text, gpu_setting
+                            ):
                                 self.gpu_combo.setCurrentIndex(i)
                                 break
 

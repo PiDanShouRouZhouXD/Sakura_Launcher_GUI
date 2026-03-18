@@ -130,7 +130,9 @@ class MainWindow(MSFluentWindow):
     def run_llamacpp_batch_bench(self):
         self._run_llamacpp("llama-batched-bench")
 
-    def check_gpu_ability(self, selected_gpu_display, model_name, context_length, n_parallel):
+    def check_gpu_ability(
+        self, selected_gpu_display, model_name, context_length, n_parallel
+    ):
         """检查GPU能力"""
         try:
             check_result = self.gpu_manager.check_gpu_ability(
@@ -235,10 +237,7 @@ class MainWindow(MSFluentWindow):
         """检查启动要求"""
         # 检查GPU能力
         if not self.check_gpu_ability(
-            selected_gpu_display,
-            model_name,
-            context_length,
-            n_parallel
+            selected_gpu_display, model_name, context_length, n_parallel
         ):
             return False
 
@@ -329,7 +328,9 @@ class MainWindow(MSFluentWindow):
 
         if section.flash_attention_check.isChecked():
             option_extra.append("-fa")
-            if version >= 6325:     # https://github.com/ggml-org/llama.cpp/releases/tag/b6325
+            if (
+                version >= 6325
+            ):  # https://github.com/ggml-org/llama.cpp/releases/tag/b6325
                 option_extra.append("on")
         if section.no_mmap_check.isChecked():
             option_extra.append("--no-mmap")
@@ -374,11 +375,11 @@ class MainWindow(MSFluentWindow):
             cmd_str = " ".join(command)
             # 使用 osascript 执行命令，要先进入正确目录
             apple_script = [
-                'osascript',
-                '-e',
-                f'''tell application "Terminal"
+                "osascript",
+                "-e",
+                f"""tell application "Terminal"
                     do script "cd {CURRENT_DIR} && {cmd_str}"
-                end tell'''
+                end tell""",
             ]
             subprocess.Popen(apple_script, env=env)
         else:
@@ -431,8 +432,12 @@ class MainWindow(MSFluentWindow):
         self.gpu_manager.detect_gpus()
         self.run_server_section.refresh_gpus(keep_selected=True)
 
-        if not self.gpu_manager.nvidia_gpus and not self.gpu_manager.amd_gpus:
-            logging.info("未检测到NVIDIA或AMD GPU")
+        if (
+            not self.gpu_manager.nvidia_gpus
+            and not self.gpu_manager.amd_gpus
+            and not self.gpu_manager.apple_gpus
+        ):
+            logging.info("未检测到NVIDIA、AMD或Apple(MPS) GPU")
 
     def save_window_state(self):
         if SETTING.remember_window_state:

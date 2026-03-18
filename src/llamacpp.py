@@ -11,7 +11,6 @@ from PySide6.QtCore import QObject, Signal
 from .common import GHPROXY_URL
 
 
-
 class Llamacpp:
     repo: str
     filename: str
@@ -103,6 +102,7 @@ def unzip_llamacpp(folder: str, filename: str):
                 os.chmod(dst_path, 0o755)
             # 删除空文件夹
             import shutil
+
             shutil.rmtree(os.path.join(llama_folder, "build"))
     else:
         print(f"不支持的文件格式: {filename}")
@@ -132,7 +132,7 @@ def get_llamacpp_version(llamacpp_path: str):
             [executable_path, "--version"],
             capture_output=True,
             text=True,
-            timeout=2,
+            timeout=10,
             shell=os.name == "nt",
         )
         version_output = result.stderr.strip()  # 使用 stderr 而不是 stdout
